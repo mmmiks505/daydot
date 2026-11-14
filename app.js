@@ -38,7 +38,7 @@ function writeJSON(key, value) {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* storage unavailable */ }
 }
 let todos = readJSON(STORE_KEY, []);
-const settings = Object.assign({ name: "", theme: "auto", weekStart: 0, mode: "month", color: "mono" }, readJSON(SETTINGS_KEY, {}));
+const settings = Object.assign({ name: "", theme: "auto", weekStart: 0, mode: "month", color: "white" }, readJSON(SETTINGS_KEY, {}));
 const saveTodos = () => writeJSON(STORE_KEY, todos);
 const saveSettings = () => writeJSON(SETTINGS_KEY, settings);
 
@@ -283,16 +283,16 @@ function renderTodoList() {
 }
 
 /* ---------- profile ---------- */
-// App colors: [light-mode color, dark-mode color]. "mono" is black in light mode, white in dark mode.
+// App colors, the same choices as giftlst. Light mode: a pale background, the pastel for
+// highlights, and a deeper tone of it for buttons and text. Dark mode: a tinted dark
+// background with a light tone of the pastel.
 const COLORS = {
-  mono:   { name: "Black & white", light: "#111111", dark: "#ffffff" },
-  blue:   { name: "Blue",   light: "#2563eb", dark: "#60a5fa" },
-  purple: { name: "Purple", light: "#7c3aed", dark: "#a78bfa" },
-  pink:   { name: "Pink",   light: "#db2777", dark: "#f472b6" },
-  red:    { name: "Red",    light: "#dc2626", dark: "#f87171" },
-  orange: { name: "Orange", light: "#ea580c", dark: "#fb923c" },
-  green:  { name: "Green",  light: "#16a34a", dark: "#4ade80" },
-  teal:   { name: "Teal",   light: "#0d9488", dark: "#2dd4bf" },
+  white:  { name: "White / Gray", swatch: "#e0e0e0", light: { bg: "#f5f5f5", pastel: "#e0e0e0", accent: "#474747" }, dark: { bg: "#131313", accent: "#c8c8c8" } },
+  pink:   { name: "Pink",   swatch: "#f8bbd0", light: { bg: "#fff3f7", pastel: "#f8bbd0", accent: "#8c4a60" }, dark: { bg: "#191114", accent: "#ffb1c8" } },
+  green:  { name: "Green",  swatch: "#b7e4c7", light: { bg: "#f2fbf5", pastel: "#b7e4c7", accent: "#386a4c" }, dark: { bg: "#0f1511", accent: "#9dd4b0" } },
+  yellow: { name: "Yellow", swatch: "#ffee99", light: { bg: "#fffce8", pastel: "#ffee99", accent: "#6a5f11" }, dark: { bg: "#15130b", accent: "#dac86f" } },
+  blue:   { name: "Blue",   swatch: "#bbdefb", light: { bg: "#f2f8ff", pastel: "#bbdefb", accent: "#36618e" }, dark: { bg: "#111418", accent: "#a1c9fd" } },
+  purple: { name: "Purple", swatch: "#d1c4e9", light: { bg: "#f8f4fd", pastel: "#d1c4e9", accent: "#65558f" }, dark: { bg: "#141218", accent: "#cfbdfe" } },
 };
 
 function renderProfile() {
@@ -345,15 +345,15 @@ $("photo-remove").addEventListener("click", () => { delete settings.photo; saveS
 const darkQuery = matchMedia("(prefers-color-scheme: dark)");
 function applyTheme() {
   const root = document.documentElement;
-  if (settings.theme === "auto") delete root.dataset.theme;
-  else root.dataset.theme = settings.theme;
   const dark = settings.theme === "dark" || (settings.theme === "auto" && darkQuery.matches);
-  const c = COLORS[settings.color] || COLORS.mono;
-  const accent = dark ? c.dark : c.light;
-  root.style.setProperty("--accent", accent);
-  // White text on dark accents, near-black text on light ones.
-  root.style.setProperty("--on-accent", dark ? "#111111" : "#ffffff");
-  document.querySelector('meta[name="theme-color"]').content = dark ? "#0d0d0d" : "#ffffff";
+  const c = COLORS[settings.color] || COLORS.white;
+  const t = dark ? c.dark : c.light;
+  root.classList.toggle("dark", dark);
+  root.style.setProperty("--bg", t.bg);
+  root.style.setProperty("--pastel", t.pastel || c.swatch);
+  root.style.setProperty("--accent", t.accent);
+  root.style.setProperty("--on-accent", dark ? "#1c1b1d" : "#ffffff");
+  document.querySelector('meta[name="theme-color"]').content = t.bg;
 }
 darkQuery.addEventListener("change", applyTheme);
 
@@ -364,7 +364,7 @@ Object.entries(COLORS).forEach(([key, c]) => {
   b.setAttribute("role", "radio");
   b.setAttribute("aria-label", c.name);
   b.title = c.name;
-  b.style.background = key === "mono" ? "linear-gradient(135deg, #111 50%, #fff 50%)" : c.light;
+  b.style.background = c.swatch;
   b.addEventListener("click", () => { settings.color = key; saveSettings(); applyTheme(); renderProfile(); });
   $("color-swatches").append(b);
 });
