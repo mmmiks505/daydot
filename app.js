@@ -278,7 +278,8 @@ function openEditor(todo, date) {
   $("edit-list").value = todo ? todo.listId : currentList !== "all" ? currentList : lists[0].id;
   $("edit-text").value = todo ? todo.text : "";
   $("edit-notes").value = todo ? todo.notes || "" : "";
-  $("edit-date").value = todo ? todo.date : date || "";
+  setEditDate(todo ? todo.date : date || "", false);
+  showMiniCal(false);
   $("edit-time").value = todo ? todo.time : "";
   $("edit-remind").value = todo && todo.remind != null ? String(todo.remind) : "";
   $("edit-repeat").value = todo && todo.repeat ? todo.repeat : "";
@@ -289,6 +290,54 @@ function openEditor(todo, date) {
   updateRemindHint();
   openOverlay("edit-screen");
   if (!todo) setTimeout(() => $("edit-text").focus(), 50);
+}
+
+/* ---------- cute date picker ---------- */
+let miniMonth = new Date(); miniMonth.setDate(1);
+function setEditDate(k, notify = true) {
+  $("edit-date").value = k || "";
+  $("date-btn-text").textContent = k ? `${friendlyDay(k)}${friendlyDay(k).includes(",") ? "" : " · " + fmt(k, { month: "short", day: "numeric" })}` : "No date";
+  $("date-btn").classList.toggle("empty", !k);
+  if (k) { const d = fromKey(k); miniMonth = new Date(d.getFullYear(), d.getMonth(), 1); }
+  if (notify) $("edit-date").dispatchEvent(new Event("input"));
+  if (!$("mini-cal").hidden) renderMiniCal();
+}
+function showMiniCal(open) {
+  $("mini-cal").hidden = !open;
+  $("date-btn").setAttribute("aria-expanded", open);
+  if (open) {
+    if (!$("edit-date").value) { miniMonth = new Date(); miniMonth.setDate(1); }
+    renderMiniCal();
+  }
+}
+function renderMiniCal() {
+  $("mini-month").textContent = miniMonth.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  const grid = $("mini-grid");
+  grid.innerHTML = "";
+  const names = [...WEEKDAYS.slice(settings.weekStart), ...WEEKDAYS.slice(0, settings.weekStart)];
+  names.forEach((n) => grid.append(el("span", "mini-wd", n[0])));
+  const first = keyOf(miniMonth);
+  const offset = (miniMonth.getDay() - settings.weekStart + 7) % 7;
+  for (let i = 0; i < offset; i++) grid.append(el("span"));
+  const days = new Date(miniMonth.getFullYear(), miniMonth.getMonth() + 1, 0).getDate();
+  const t = todayKey();
+  const picked = $("edit-date").value;
+  const busy = new Set(todos.filter((x) => !x.done && x.date).map((x) => x.date));
+  for (let n = 0; n < days; n++) {
+    const k = addDays(first, n);
+    const d = fromKey(k);
+    const b = el("button", "mini-day", d.getDate());
+    b.type = "button";
+    if ([0, 6].includes(d.getDay())) b.classList.add("weekend");
+    if (k < t) b.classList.add("past");
+    if (k === t) b.classList.add("today");
+    if (busy.has(k)) b.classList.add("has");
+    if (k === picked) b.classList.add("picked");
+    b.setAttribute("aria-label", fmt(k, { weekday: "long", month: "long", day: "numeric" }));
+    b.setAttribute("aria-pressed", k === picked);
+    b.addEventListener("click", () => { setEditDate(k); setTimeout(() => showMiniCal(false), 220); });
+    grid.append(b);
+  }
 }
 
 function addStepRow(st = { id: newId(), text: "", done: false }) {
@@ -967,6 +1016,14 @@ $("edit-cancel").addEventListener("click", closeOverlay);
 $("list-cancel").addEventListener("click", closeOverlay);
 ["edit-date", "edit-time", "edit-remind"].forEach((id) => $(id).addEventListener("input", updateRemindHint));
 ["edit-date", "edit-repeat"].forEach((id) => $(id).addEventListener("input", updateRepeatHint));
+$("date-btn").addEventListener("click", () => showMiniCal($("mini-cal").hidden));
+$("mini-prev").addEventListener("click", () => { miniMonth = new Date(miniMonth.getFullYear(), miniMonth.getMonth() - 1, 1); renderMiniCal(); });
+$("mini-next").addEventListener("click", () => { miniMonth = new Date(miniMonth.getFullYear(), miniMonth.getMonth() + 1, 1); renderMiniCal(); });
+document.querySelectorAll("[data-quick]").forEach((b) => b.addEventListener("click", () => {
+  const q = b.dataset.quick;
+  setEditDate(q === "none" ? "" : addDays(todayKey(), Number(q)));
+  setTimeout(() => showMiniCal(false), q === "none" ? 0 : 220);
+}));
 $("add-step").addEventListener("click", () => addStepRow().querySelector('input[type="text"]').focus());
 $("edit-ics").addEventListener("click", () => {
   const remind = $("edit-remind").value === "" ? null : Number($("edit-remind").value);
@@ -1016,7 +1073,7 @@ $("edit-form").addEventListener("submit", (e) => {
   let finalDate = date;
   if (repeat && !finalDate) finalDate = todayKey();
   if (!text) return;
-  if (remind != null && !date) { updateRemindHint(); $("edit-date").focus(); return; }
+  if (remind != null && !date) { updateRemindHint(); showMiniCal(true); return; }
   if (remind != null) askNotifyPermission();
   if (editing) {
     if (editing.repeat !== repeat || editing.date !== finalDate) delete editing.repeatDay;

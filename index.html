@@ -100,14 +100,31 @@
           <select id="edit-list"></select>
         </label>
         <div class="field-row">
-          <label class="field">
+          <div class="field">
             <span>Date <em>(optional)</em></span>
-            <input id="edit-date" type="date">
-          </label>
+            <input id="edit-date" type="hidden">
+            <button type="button" class="date-btn" id="date-btn" aria-expanded="false" aria-controls="mini-cal">
+              <span aria-hidden="true">📅</span><span id="date-btn-text">No date</span>
+            </button>
+          </div>
           <label class="field">
             <span>Time <em>(optional)</em></span>
             <input id="edit-time" type="time">
           </label>
+        </div>
+        <div class="mini-cal" id="mini-cal" hidden>
+          <div class="mini-quick">
+            <button type="button" data-quick="0">Today</button>
+            <button type="button" data-quick="1">Tomorrow</button>
+            <button type="button" data-quick="7">Next week</button>
+            <button type="button" data-quick="none">No date</button>
+          </div>
+          <div class="mini-head">
+            <button type="button" class="mini-nav" id="mini-prev" aria-label="Previous month">‹</button>
+            <span class="mini-month" id="mini-month"></span>
+            <button type="button" class="mini-nav" id="mini-next" aria-label="Next month">›</button>
+          </div>
+          <div class="mini-grid" id="mini-grid" role="grid"></div>
         </div>
         <label class="field">
           <span>Repeat</span>
