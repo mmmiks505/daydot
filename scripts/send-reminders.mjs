@@ -8,6 +8,11 @@ const BASE = "https://firestore.googleapis.com/v1/projects/daydot-todos/database
 const { BOT_EMAIL, BOT_PASSWORD, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY } = process.env;
 const LATE_LIMIT = 3 * 3600 * 1000; // skip reminders more than 3 hours overdue
 
+if (!BOT_EMAIL || !BOT_PASSWORD || !VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) {
+  console.log("Reminder keys aren't set up yet, so there's nothing to do.");
+  process.exit(0);
+}
+
 webpush.setVapidDetails("https://mmmiks505.github.io/daydot/", VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
 
 // Firestore's REST format wraps every value with its type; these convert to and from it.
