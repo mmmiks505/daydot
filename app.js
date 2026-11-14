@@ -718,6 +718,9 @@ function step(n) {
 }
 
 /* ---------- to do list ---------- */
+// The next copy of a repeating todo stays out of To do until its day comes
+// (it's still on the calendar on that day).
+const waitingRepeat = (x) => x.repeat && !x.done && x.date && x.date > todayKey();
 function renderListChips() {
   const wrap = $("list-chips");
   wrap.innerHTML = "";
@@ -733,8 +736,8 @@ function renderListChips() {
     b.addEventListener("click", () => chooseList(id));
     wrap.append(b);
   };
-  chip("all", "All", todos.filter((x) => !x.done).length);
-  lists.forEach((l) => chip(l.id, listName(l.id), todos.filter((x) => !x.done && x.listId === l.id).length));
+  chip("all", "All", todos.filter((x) => !x.done && !waitingRepeat(x)).length);
+  lists.forEach((l) => chip(l.id, listName(l.id), todos.filter((x) => !x.done && !waitingRepeat(x) && x.listId === l.id).length));
   const add = el("button", "list-chip new", "+ New list");
   add.type = "button";
   add.addEventListener("click", () => openListEditor(null));
@@ -745,7 +748,7 @@ function renderTodoList() {
   renderListChips();
   const t = todayKey();
   const all = currentList === "all";
-  const scope = all ? todos : todos.filter((x) => x.listId === currentList);
+  const scope = (all ? todos : todos.filter((x) => x.listId === currentList)).filter((x) => !waitingRepeat(x));
   const open = scope.filter((x) => !x.done);
   const overdue = open.filter((x) => x.date && x.date < t).length;
   $("list-title").textContent = all ? "All lists" : listName(currentList);
@@ -1144,4 +1147,5 @@ renderNotifyStatus();
 showTab();
 checkReminders();
 setInterval(checkReminders, 20000);
-document.addEventListener("visibilitychange", () => { if (!document.hidden) checkReminders(); });
+// Coming back to the app on a new day shows that day's repeating todos.
+document.addEventListener("visibilitychange", () => { if (!document.hidden) { checkReminders(); renderAll(); } });
