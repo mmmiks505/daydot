@@ -7,7 +7,8 @@
   <meta name="description" content="Daydot: a calendar for your todos.">
   <meta name="apple-mobile-web-app-title" content="Daydot">
   <meta name="theme-color" content="#f5f5f5">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23474747'/><circle cx='50' cy='50' r='20' fill='white'/></svg>">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <link rel="manifest" href="manifest.json">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -15,9 +16,21 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <!-- The Daydot logo: a fancy italic "d" and a pink dot. Used in the corner and the opening animation. -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="logo-d" viewBox="0 0 100 100"><path transform="translate(22 80) scale(0.075 -0.075)" d="M423.5977783203125 85Q415.3978271484375 60.800048828125 419.59771728515625 47.8997802734375Q423.797607421875 34.99951171875 437.9979248046875 34.99951171875Q451.398193359375 34.99951171875 466.5982666015625 50.2998046875Q481.79833984375 65.60009765625 498.9984130859375 113.6004638671875L516.398193359375 162H535.398193359375L511.1982421875 89Q497.998291015625 47.800048828125 475.89837646484375 25.60003662109375Q453.7984619140625 3.4000244140625 428.49859619140625 -5.29998779296875Q403.19873046875 -14 378.9989013671875 -14Q316.5989990234375 -14 299.799560546875 31.6004638671875Q290.9998779296875 50.600341796875 292.0999755859375 79.10003662109375Q293.2000732421875 107.5997314453125 304.39990234375 145.19921875L443.0001220703125 667Q452.60009765625 701 440.60009765625 717.0Q428.60009765625 733 379.60009765625 733L386.2000732421875 754Q457.3994140625 755 513.1988525390625 765.5Q568.998291015625 776 619.5977783203125 795ZM183.9984130859375 35.999267578125Q201.19873046875 35.999267578125 224.299072265625 57.99957275390625Q247.3994140625 79.9998779296875 272.99969482421875 123.3001708984375Q298.5999755859375 166.6004638671875 322.80010986328125 230.20050048828125Q347.000244140625 293.800537109375 366.0001220703125 376L351.0001220703125 268Q317.9998779296875 171.5997314453125 285.4996337890625 108.999755859375Q252.9993896484375 46.3997802734375 214.39935302734375 16.19989013671875Q175.79931640625 -14 123.19970703125 -14Q90.3997802734375 -14 63.2999267578125 0.79998779296875Q36.2000732421875 15.5999755859375 20.2001953125 46.39990234375Q4.2003173828125 77.1998291015625 4.2003173828125 126.399658203125Q4.2003173828125 171.999755859375 18.80035400390625 226.2998046875Q33.400390625 280.599853515625 61.50042724609375 333.9998779296875Q89.6004638671875 387.39990234375 130.40045166015625 432.19989013671875Q171.200439453125 476.9998779296875 222.90032958984375 503.9998779296875Q274.6002197265625 530.9998779296875 336.7999267578125 530.9998779296875Q369.3995361328125 530.9998779296875 384.89971923828125 516.499755859375Q400.39990234375 501.9996337890625 402.9998779296875 475.999267578125L394.9998779296875 455.999267578125Q390.9998779296875 482.399658203125 380.9996337890625 495.19976806640625Q370.9993896484375 507.9998779296875 350.9993896484375 507.9998779296875Q324.9989013671875 507.9998779296875 296.99859619140625 484.69976806640625Q268.998291015625 461.399658203125 243.29815673828125 420.799560546875Q217.5980224609375 380.199462890625 196.7979736328125 328.59942626953125Q175.9979248046875 276.9993896484375 163.9979248046875 219.49951171875Q151.9979248046875 161.9996337890625 151.9979248046875 105Q151.9979248046875 70.599609375 159.3980712890625 53.2994384765625Q166.7982177734375 35.999267578125 183.9984130859375 35.999267578125Z"/></symbol>
+  </svg>
+
+  <!-- Opening animation: the pink dot drops in next to the d, bounces and settles -->
+  <div class="splash" id="splash" aria-hidden="true">
+    <svg viewBox="0 0 100 100" class="splash-logo">
+      <use href="#logo-d" class="logo-letter"/>
+      <circle class="splash-dot" cx="73" cy="74.5" r="6.5"/>
+    </svg>
+  </div>
   <!-- Calendar -->
   <main class="view" id="view-calendar" data-view="calendar">
-    <header class="topbar"><h1>Calendar</h1></header>
+    <header class="topbar"><a href="#calendar" class="corner-logo" aria-label="Daydot home"><svg viewBox="0 0 100 100" aria-hidden="true"><use href="#logo-d" class="logo-letter"/><circle cx="73" cy="74.5" r="6.5" class="logo-dot"/></svg></a><h1>Calendar</h1></header>
     <div class="cal-layout">
       <section class="card calendar">
         <header class="cal-head">
@@ -184,7 +197,7 @@
 
   <!-- To do -->
   <main class="view narrow" id="view-todo" data-view="todo" hidden>
-    <header class="topbar"><h1>To do</h1></header>
+    <header class="topbar"><a href="#calendar" class="corner-logo" aria-label="Daydot home"><svg viewBox="0 0 100 100" aria-hidden="true"><use href="#logo-d" class="logo-letter"/><circle cx="73" cy="74.5" r="6.5" class="logo-dot"/></svg></a><h1>To do</h1></header>
     <label class="search">
       <span aria-hidden="true">🔍</span>
       <input type="search" id="todo-search" placeholder="Search todos" autocomplete="off" aria-label="Search todos">
@@ -207,7 +220,7 @@
 
   <!-- Profile -->
   <main class="view narrow" id="view-profile" data-view="profile" hidden>
-    <header class="topbar"><h1>Profile</h1></header>
+    <header class="topbar"><a href="#calendar" class="corner-logo" aria-label="Daydot home"><svg viewBox="0 0 100 100" aria-hidden="true"><use href="#logo-d" class="logo-letter"/><circle cx="73" cy="74.5" r="6.5" class="logo-dot"/></svg></a><h1>Profile</h1></header>
     <section class="card account" id="account-card" hidden>
       <div id="acct-out">
         <h2>Save your todos</h2>

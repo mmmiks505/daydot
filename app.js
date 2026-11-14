@@ -1141,6 +1141,9 @@ window.daydot = {
   },
 };
 
+// Remove the opening animation once it has played.
+setTimeout(() => { const sp = $("splash"); if (sp) sp.remove(); }, 2000);
+
 applyTheme();
 renderAll();
 renderNotifyStatus();
