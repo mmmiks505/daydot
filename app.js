@@ -97,6 +97,11 @@ function todoItem(t, { showList = false } = {}) {
   edit.addEventListener("click", () => openEditor(t));
   li.append(cb, el("span", "text", t.text));
   if (showList) li.append(el("span", "tag", listName(t.listId)));
+  if (remindAt(t) && !t.done) {
+    const bell = el("span", "bell", "🔔");
+    bell.title = "Reminder: " + REMIND_LABELS[t.remind];
+    li.append(bell);
+  }
   li.append(el("span", "time", formatTime(t.time)), edit);
   return li;
 }
@@ -112,9 +117,128 @@ function openEditor(todo, date) {
   $("edit-text").value = todo ? todo.text : "";
   $("edit-date").value = todo ? todo.date : date || "";
   $("edit-time").value = todo ? todo.time : "";
+  $("edit-remind").value = todo && todo.remind != null ? String(todo.remind) : "";
   $("edit-delete").hidden = !todo;
+  updateRemindHint();
   openOverlay("edit-screen");
   if (!todo) setTimeout(() => $("edit-text").focus(), 50);
+}
+
+/* ---------- reminders ---------- */
+// A todo's reminder is how many minutes before it to remind (0 = at the time).
+// It needs a date; with no time it uses 9:00 AM that day.
+const REMIND_LABELS = { 0: "at the time", 10: "10 minutes before", 30: "30 minutes before", 60: "1 hour before", 1440: "1 day before" };
+function remindAt(t) {
+  if (!t.date || t.remind == null) return null;
+  const [y, m, d] = t.date.split("-").map(Number);
+  const [hh, mm] = (t.time || "09:00").split(":").map(Number);
+  return new Date(y, m - 1, d, hh, mm).getTime() - t.remind * 60000;
+}
+const canNotify = () => "Notification" in window;
+
+function updateRemindHint() {
+  const date = $("edit-date").value;
+  const remind = $("edit-remind").value;
+  const hint = $("remind-hint");
+  $("edit-ics").hidden = !date;
+  if (remind === "") { hint.textContent = ""; return; }
+  if (!date) { hint.textContent = "Pick a date so Daydot knows when to remind you."; return; }
+  const when = new Date(remindAt({ date, time: $("edit-time").value, remind: Number(remind) }));
+  hint.textContent = "Reminds you " + when.toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) +
+    (!$("edit-time").value ? " (9 AM, since there's no time)" : "") + ".";
+}
+
+async function askNotifyPermission() {
+  if (!canNotify() || Notification.permission !== "default") return;
+  try { await Notification.requestPermission(); } catch { /* older browsers */ }
+  renderNotifyStatus();
+}
+
+let swReg = null;
+if ("serviceWorker" in navigator && location.protocol !== "file:") {
+  navigator.serviceWorker.register("sw.js").then((r) => { swReg = r; }).catch(() => {});
+}
+
+function showToast(text) {
+  $("toast-text").textContent = text;
+  $("toast").hidden = false;
+  clearTimeout(showToast.timer);
+  showToast.timer = setTimeout(() => { $("toast").hidden = true; }, 12000);
+}
+
+function fireReminder(t) {
+  const body = (t.time ? formatTime(t.time) + " · " : "") + friendlyDay(t.date);
+  showToast(`${t.text} — ${body}`);
+  if (canNotify() && Notification.permission === "granted") {
+    const opts = { body, tag: t.id, icon: "icon.svg" };
+    if (swReg) swReg.showNotification(t.text, opts).catch(() => {});
+    else try { new Notification(t.text, opts); } catch { /* not allowed here */ }
+  }
+}
+
+// Checks every 20 seconds while Daydot is open. Missed reminders from the last day
+// show when you next open it.
+function checkReminders() {
+  const now = Date.now();
+  let changed = false;
+  todos.forEach((t) => {
+    const at = remindAt(t);
+    if (!at || t.done || t.reminded === at || at > now) return;
+    if (now - at < 864e5) fireReminder(t);
+    t.reminded = at;
+    changed = true;
+  });
+  if (changed) saveTodos();
+}
+
+/* Downloads a calendar file with an alarm, so the phone's own calendar reminds you
+   even when Daydot is closed. */
+function downloadIcs(t) {
+  const [y, m, d] = t.date.split("-");
+  const esc = (v) => v.replace(/[\\;,]/g, (c) => "\\" + c).replace(/\n/g, "\\n");
+  const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+/, "");
+  let start, end;
+  if (t.time) {
+    const [hh, mm] = t.time.split(":");
+    start = `DTSTART:${y}${m}${d}T${hh}${mm}00`;
+    const e = new Date(+y, m - 1, +d, +hh, +mm + 30);
+    end = `DTEND:${e.getFullYear()}${pad(e.getMonth() + 1)}${pad(e.getDate())}T${pad(e.getHours())}${pad(e.getMinutes())}00`;
+  } else {
+    start = `DTSTART;VALUE=DATE:${y}${m}${d}`;
+    end = `DTEND;VALUE=DATE:${addDays(t.date, 1).replace(/-/g, "")}`;
+  }
+  const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Daydot//EN", "BEGIN:VEVENT",
+    `UID:${t.id}@daydot`, `DTSTAMP:${stamp}`, start, end, `SUMMARY:${esc(t.text)}`];
+  if (t.remind != null) {
+    // All-day events count from midnight, so "at the time" means 9 AM that day.
+    const mins = t.time ? t.remind : t.remind - 540;
+    lines.push("BEGIN:VALARM", "ACTION:DISPLAY", `DESCRIPTION:${esc(t.text)}`,
+      mins >= 0 ? `TRIGGER:-PT${mins}M` : `TRIGGER:PT${-mins}M`, "END:VALARM");
+  }
+  lines.push("END:VEVENT", "END:VCALENDAR");
+  const a = el("a");
+  a.href = URL.createObjectURL(new Blob([lines.join("\r\n")], { type: "text/calendar" }));
+  a.download = (t.text.replace(/[^\w\s-]/g, "").trim().slice(0, 40) || "todo") + ".ics";
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+function renderNotifyStatus() {
+  const status = $("notif-status");
+  const btn = $("notif-on");
+  if (!canNotify()) {
+    status.textContent = "Shown inside Daydot";
+    btn.hidden = true;
+  } else if (Notification.permission === "granted") {
+    status.textContent = "On";
+    btn.hidden = true;
+  } else if (Notification.permission === "denied") {
+    status.textContent = "Blocked in your browser settings";
+    btn.hidden = true;
+  } else {
+    status.textContent = "";
+    btn.hidden = false;
+  }
 }
 
 /* Full-screen forms get their own history entry, so Cancel, the back gesture or Esc closes them. */
@@ -502,6 +626,13 @@ $("day-add").addEventListener("click", () => openEditor(null, selected));
 $("todo-add").addEventListener("click", () => openEditor(null, ""));
 $("edit-cancel").addEventListener("click", closeOverlay);
 $("list-cancel").addEventListener("click", closeOverlay);
+["edit-date", "edit-time", "edit-remind"].forEach((id) => $(id).addEventListener("input", updateRemindHint));
+$("edit-ics").addEventListener("click", () => {
+  const remind = $("edit-remind").value === "" ? null : Number($("edit-remind").value);
+  downloadIcs({ id: editing ? editing.id : newId(), text: $("edit-text").value.trim() || "Todo", date: $("edit-date").value, time: $("edit-time").value, remind });
+});
+$("notif-on").addEventListener("click", askNotifyPermission);
+$("toast-close").addEventListener("click", () => { $("toast").hidden = true; });
 $("list-edit").addEventListener("click", () => openListEditor(lists.find((l) => l.id === currentList)));
 $("list-form").addEventListener("submit", (e) => {
   e.preventDefault();
@@ -536,14 +667,20 @@ $("edit-form").addEventListener("submit", (e) => {
   const text = $("edit-text").value.trim();
   const date = $("edit-date").value;
   const listId = $("edit-list").value;
+  const remind = $("edit-remind").value === "" ? null : Number($("edit-remind").value);
   if (!text) return;
+  if (remind != null && !date) { updateRemindHint(); $("edit-date").focus(); return; }
+  if (remind != null) askNotifyPermission();
   if (editing) {
-    Object.assign(editing, { text, date, time: $("edit-time").value, listId });
+    Object.assign(editing, { text, date, time: $("edit-time").value, listId, remind });
     saveTodos();
     renderAll();
   } else {
     if (filter === "done") filter = "open";
     addTodo(text, date, $("edit-time").value, listId);
+    todos[todos.length - 1].remind = remind;
+    saveTodos();
+    renderAll();
   }
   closeOverlay();
 });
@@ -592,7 +729,7 @@ $("import").addEventListener("change", async (e) => {
     if (Array.isArray(data.lists) && data.lists.length && data.lists.every((l) => l && l.id && typeof l.name === "string")) {
       lists = data.lists.map((l) => ({ id: String(l.id), name: l.name }));
     }
-    todos = list.map((x, i) => ({ id: x.id || "i" + i + Date.now().toString(36), date: x.date || "", text: x.text, time: x.time || "", listId: x.listId, done: !!x.done, doneAt: x.doneAt, created: x.created || Date.now() }));
+    todos = list.map((x, i) => ({ id: x.id || "i" + i + Date.now().toString(36), date: x.date || "", text: x.text, time: x.time || "", listId: x.listId, remind: x.remind ?? null, reminded: x.reminded, done: !!x.done, doneAt: x.doneAt, created: x.created || Date.now() }));
     fixListIds();
     currentList = "all";
     saveLists();
@@ -623,4 +760,8 @@ window.addEventListener("hashchange", showTab);
 
 applyTheme();
 renderAll();
+renderNotifyStatus();
 showTab();
+checkReminders();
+setInterval(checkReminders, 20000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) checkReminders(); });
