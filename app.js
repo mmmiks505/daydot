@@ -48,11 +48,13 @@ function fixListIds() {
   todos.forEach((t) => { if (!ids.has(t.listId)) t.listId = lists[0].id; if (t.date == null) t.date = ""; });
 }
 fixListIds();
-const saveLists = () => writeJSON(LISTS_KEY, lists);
+// When logged in, sync.js uploads changes to the account a moment after each save.
+const queueSync = () => { if (window.daydotSync) window.daydotSync.queue(); };
+const saveLists = () => { writeJSON(LISTS_KEY, lists); queueSync(); };
 const listName = (id) => (lists.find((l) => l.id === id) || lists[0]).name;
 const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-const saveTodos = () => writeJSON(STORE_KEY, todos);
-const saveSettings = () => writeJSON(SETTINGS_KEY, settings);
+const saveTodos = () => { writeJSON(STORE_KEY, todos); queueSync(); };
+const saveSettings = () => { writeJSON(SETTINGS_KEY, settings); queueSync(); };
 
 /* ---------- state ---------- */
 let selected = todayKey();
@@ -247,7 +249,7 @@ function renderNotifyStatus() {
 }
 
 /* Full-screen forms get their own history entry, so Cancel, the back gesture or Esc closes them. */
-const OVERLAYS = ["edit-screen", "list-screen"];
+const OVERLAYS = ["edit-screen", "list-screen", "account-screen"];
 function openOverlay(id) {
   $(id).hidden = false;
   document.body.classList.add("day-open");
@@ -764,6 +766,28 @@ document.addEventListener("keydown", (e) => {
   else if (!$("day-screen").hidden) closeDay();
 });
 window.addEventListener("hashchange", showTab);
+
+/* For sync.js: read everything to upload, and swap in what comes from the account. */
+window.daydot = {
+  snapshot: () => JSON.parse(JSON.stringify({ todos, lists, settings })),
+  load(data) {
+    if (Array.isArray(data.todos)) todos = data.todos;
+    if (Array.isArray(data.lists) && data.lists.length) lists = data.lists;
+    if (data.settings && typeof data.settings === "object") {
+      Object.keys(settings).forEach((k) => { if (!(k in data.settings)) delete settings[k]; });
+      Object.assign(settings, { name: "", theme: "auto", weekStart: 0, mode: "month", color: "white" }, data.settings);
+    }
+    fixListIds();
+    if (currentList !== "all" && !lists.some((l) => l.id === currentList)) currentList = "all";
+    writeJSON(STORE_KEY, todos); writeJSON(LISTS_KEY, lists); writeJSON(SETTINGS_KEY, settings);
+    applyTheme();
+    renderAll();
+  },
+  clearLocal() {
+    try { [STORE_KEY, LISTS_KEY, SETTINGS_KEY].forEach((k) => localStorage.removeItem(k)); } catch { /* ignore */ }
+    location.reload();
+  },
+};
 
 applyTheme();
 renderAll();

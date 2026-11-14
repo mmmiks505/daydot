@@ -128,6 +128,34 @@
     </div>
   </section>
 
+  <!-- Log in / create account -->
+  <section class="day-screen edit-screen" id="account-screen" hidden aria-labelledby="acct-title">
+    <div class="day-screen-inner">
+      <header class="day-screen-head">
+        <button type="button" class="back" id="acct-cancel">‹ Cancel</button>
+      </header>
+      <h1 id="acct-title">Log in</h1>
+      <form id="acct-form" class="card edit-form" autocomplete="on" novalidate>
+        <div class="seg acct-seg" role="radiogroup" aria-label="Log in or create account">
+          <button type="button" data-acct-mode="login">Log in</button>
+          <button type="button" data-acct-mode="signup">Create account</button>
+        </div>
+        <label class="field">
+          <span>Email</span>
+          <input id="acct-email-input" type="email" autocomplete="email" inputmode="email" required placeholder="you@example.com">
+        </label>
+        <label class="field">
+          <span>Password</span>
+          <input id="acct-password" type="password" autocomplete="current-password" required minlength="6" placeholder="At least 6 characters">
+        </label>
+        <p class="form-error" id="acct-error" role="alert" hidden></p>
+        <p class="form-note" id="acct-note" role="status" hidden></p>
+        <button type="submit" class="primary big" id="acct-submit">Log in</button>
+        <button type="button" class="link-btn center" id="acct-forgot">Forgot password?</button>
+      </form>
+    </div>
+  </section>
+
   <!-- To do -->
   <main class="view narrow" id="view-todo" data-view="todo" hidden>
     <header class="topbar"><h1>To do</h1></header>
@@ -150,6 +178,24 @@
   <!-- Profile -->
   <main class="view narrow" id="view-profile" data-view="profile" hidden>
     <header class="topbar"><h1>Profile</h1></header>
+    <section class="card account" id="account-card" hidden>
+      <div id="acct-out">
+        <h2>Save your todos</h2>
+        <p class="muted">Make a free account with your email. Your todos are saved to it and show up on every device you log in on.</p>
+        <div class="acct-actions">
+          <button type="button" class="primary" id="acct-signup">Create account</button>
+          <button type="button" id="acct-login">Log in</button>
+        </div>
+      </div>
+      <div id="acct-in" class="acct-in" hidden>
+        <div class="acct-who">
+          <span class="small muted">Logged in as</span>
+          <span class="acct-email" id="acct-email"></span>
+          <span class="small muted" id="sync-status"></span>
+        </div>
+        <button type="button" id="acct-logout">Log out</button>
+      </div>
+    </section>
     <section class="card profile-top">
       <div class="avatar-wrap">
         <label class="avatar" id="avatar" title="Change profile picture">
@@ -232,5 +278,6 @@
   </nav>
 
   <script src="app.js"></script>
+  <script type="module" src="sync.js"></script>
 </body>
 </html>
