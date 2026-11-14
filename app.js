@@ -95,7 +95,10 @@ function todoItem(t, { showList = false } = {}) {
   edit.type = "button";
   edit.setAttribute("aria-label", `Edit "${t.text}"`);
   edit.addEventListener("click", () => openEditor(t));
-  li.append(cb, el("span", "text", t.text));
+  const text = el("span", "text");
+  text.append(el("span", null, t.text));
+  if (t.notes) text.append(el("span", "note", t.notes.split("\n")[0]));
+  li.append(cb, text);
   if (showList) li.append(el("span", "tag", listName(t.listId)));
   if (remindAt(t) && !t.done) {
     const bell = el("span", "bell", "🔔");
@@ -115,6 +118,7 @@ function openEditor(todo, date) {
   lists.forEach((l) => $("edit-list").append(new Option(l.name, l.id)));
   $("edit-list").value = todo ? todo.listId : currentList !== "all" ? currentList : lists[0].id;
   $("edit-text").value = todo ? todo.text : "";
+  $("edit-notes").value = todo ? todo.notes || "" : "";
   $("edit-date").value = todo ? todo.date : date || "";
   $("edit-time").value = todo ? todo.time : "";
   $("edit-remind").value = todo && todo.remind != null ? String(todo.remind) : "";
@@ -209,6 +213,7 @@ function downloadIcs(t) {
   }
   const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Daydot//EN", "BEGIN:VEVENT",
     `UID:${t.id}@daydot`, `DTSTAMP:${stamp}`, start, end, `SUMMARY:${esc(t.text)}`];
+  if (t.notes) lines.push(`DESCRIPTION:${esc(t.notes)}`);
   if (t.remind != null) {
     // All-day events count from midnight, so "at the time" means 9 AM that day.
     const mins = t.time ? t.remind : t.remind - 540;
@@ -629,7 +634,7 @@ $("list-cancel").addEventListener("click", closeOverlay);
 ["edit-date", "edit-time", "edit-remind"].forEach((id) => $(id).addEventListener("input", updateRemindHint));
 $("edit-ics").addEventListener("click", () => {
   const remind = $("edit-remind").value === "" ? null : Number($("edit-remind").value);
-  downloadIcs({ id: editing ? editing.id : newId(), text: $("edit-text").value.trim() || "Todo", date: $("edit-date").value, time: $("edit-time").value, remind });
+  downloadIcs({ id: editing ? editing.id : newId(), text: $("edit-text").value.trim() || "Todo", notes: $("edit-notes").value.trim(), date: $("edit-date").value, time: $("edit-time").value, remind });
 });
 $("notif-on").addEventListener("click", askNotifyPermission);
 $("toast-close").addEventListener("click", () => { $("toast").hidden = true; });
@@ -668,17 +673,19 @@ $("edit-form").addEventListener("submit", (e) => {
   const date = $("edit-date").value;
   const listId = $("edit-list").value;
   const remind = $("edit-remind").value === "" ? null : Number($("edit-remind").value);
+  const notes = $("edit-notes").value.trim();
   if (!text) return;
   if (remind != null && !date) { updateRemindHint(); $("edit-date").focus(); return; }
   if (remind != null) askNotifyPermission();
   if (editing) {
-    Object.assign(editing, { text, date, time: $("edit-time").value, listId, remind });
+    Object.assign(editing, { text, date, time: $("edit-time").value, listId, remind, notes });
     saveTodos();
     renderAll();
   } else {
     if (filter === "done") filter = "open";
     addTodo(text, date, $("edit-time").value, listId);
     todos[todos.length - 1].remind = remind;
+    todos[todos.length - 1].notes = notes;
     saveTodos();
     renderAll();
   }
@@ -729,7 +736,7 @@ $("import").addEventListener("change", async (e) => {
     if (Array.isArray(data.lists) && data.lists.length && data.lists.every((l) => l && l.id && typeof l.name === "string")) {
       lists = data.lists.map((l) => ({ id: String(l.id), name: l.name }));
     }
-    todos = list.map((x, i) => ({ id: x.id || "i" + i + Date.now().toString(36), date: x.date || "", text: x.text, time: x.time || "", listId: x.listId, remind: x.remind ?? null, reminded: x.reminded, done: !!x.done, doneAt: x.doneAt, created: x.created || Date.now() }));
+    todos = list.map((x, i) => ({ id: x.id || "i" + i + Date.now().toString(36), date: x.date || "", text: x.text, time: x.time || "", listId: x.listId, remind: x.remind ?? null, notes: typeof x.notes === "string" ? x.notes : "", reminded: x.reminded, done: !!x.done, doneAt: x.doneAt, created: x.created || Date.now() }));
     fixListIds();
     currentList = "all";
     saveLists();
