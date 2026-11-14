@@ -77,6 +77,11 @@
           <span>Notes <em>(optional)</em></span>
           <textarea id="edit-notes" rows="4" maxlength="2000" placeholder="Details, links, anything to remember"></textarea>
         </label>
+        <div class="field">
+          <span>Steps <em>(optional)</em></span>
+          <ul class="steps" id="edit-steps"></ul>
+          <button type="button" class="link-btn add-step" id="add-step">+ Add a step</button>
+        </div>
         <label class="field">
           <span>List</span>
           <select id="edit-list"></select>
@@ -91,6 +96,17 @@
             <input id="edit-time" type="time">
           </label>
         </div>
+        <label class="field">
+          <span>Repeat</span>
+          <select id="edit-repeat">
+            <option value="">Doesn't repeat</option>
+            <option value="daily">Every day</option>
+            <option value="weekdays">Every weekday (Mon–Fri)</option>
+            <option value="weekly">Every week</option>
+            <option value="monthly">Every month</option>
+          </select>
+          <small class="hint" id="repeat-hint"></small>
+        </label>
         <label class="field">
           <span>Reminder</span>
           <select id="edit-remind">
@@ -122,6 +138,16 @@
           <span>List name</span>
           <input id="list-name" maxlength="30" required placeholder="e.g. Homework, Shopping">
         </label>
+        <div class="field-row">
+          <label class="field emoji-field">
+            <span>Emoji <em>(optional)</em></span>
+            <input id="list-emoji" maxlength="8" placeholder="📚" autocomplete="off">
+          </label>
+          <div class="field">
+            <span>Color</span>
+            <div class="swatches left" id="list-colors" role="radiogroup" aria-label="List color"></div>
+          </div>
+        </div>
         <button type="submit" class="primary big">Save</button>
         <button type="button" class="danger big" id="list-delete">Delete list</button>
       </form>
@@ -159,6 +185,10 @@
   <!-- To do -->
   <main class="view narrow" id="view-todo" data-view="todo" hidden>
     <header class="topbar"><h1>To do</h1></header>
+    <label class="search">
+      <span aria-hidden="true">🔍</span>
+      <input type="search" id="todo-search" placeholder="Search todos" autocomplete="off" aria-label="Search todos">
+    </label>
     <div class="list-chips" id="list-chips" role="tablist" aria-label="Your lists"></div>
     <div class="list-head">
       <div class="list-info">
@@ -268,6 +298,7 @@
   <div class="toast" id="toast" role="status" aria-live="polite" hidden>
     <span class="toast-icon" aria-hidden="true">🔔</span>
     <span class="toast-text" id="toast-text"></span>
+    <button type="button" class="toast-action" id="toast-action" hidden>Undo</button>
     <button type="button" class="toast-close" id="toast-close" aria-label="Dismiss">✕</button>
   </div>
 

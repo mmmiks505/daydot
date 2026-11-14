@@ -172,13 +172,39 @@ button:focus-visible, a:focus-visible, .avatar:focus-within { outline: 2px solid
 .grid-week .chip { white-space: normal; }
 
 /* ---------- todo rows ---------- */
-.todos li { display: flex; align-items: center; gap: 12px; padding: 10px 4px; border-top: 1px solid var(--line); }
+.todos li { position: relative; overflow: hidden; border-top: 1px solid var(--line); }
 .todos li:first-child { border-top: 0; }
+.todos li.empty { overflow: visible; }
+.row {
+  position: relative; z-index: 1;
+  display: flex; align-items: center; gap: 10px; padding: 10px 4px;
+  background: var(--card); touch-action: pan-y; transition: transform .2s ease;
+}
+.todos li.swiping .row { transition: none; }
+/* What shows behind a row while you swipe it */
+.todos li::before {
+  content: ""; position: absolute; inset: 0;
+  display: flex; align-items: center; padding: 0 18px;
+  font-weight: 700; font-size: 14px; color: #fff;
+}
+.todos li[data-swipe="done"]::before { content: "✓ Done"; background: #3b8c5a; justify-content: flex-start; }
+.todos li[data-swipe="undo"]::before { content: "↺ Not done"; background: #7a7a7a; justify-content: flex-start; }
+.todos li[data-swipe="delete"]::before { content: "Delete 🗑"; background: var(--danger); justify-content: flex-end; }
+:root.dark .todos li[data-swipe="delete"]::before { color: #690005; }
+.todos li:not(.armed)::before { opacity: .55; }
+.handle {
+  flex: none; cursor: grab; touch-action: none; user-select: none;
+  color: var(--muted); font-size: 16px; letter-spacing: -3px; padding: 4px 6px 4px 0;
+}
+.todos li.dragging { z-index: 3; box-shadow: 0 6px 18px rgba(0,0,0,.18); border-radius: 12px; }
+.todos li.dragging .row { background: var(--card-high); }
+.star-btn { flex: none; border: 0; padding: 2px 6px; font-size: 18px; line-height: 1; color: var(--muted); }
+.star-btn.on { color: #e0a100; }
+.star-btn:hover { background: none; color: #e0a100; }
 .todos input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--accent); flex: none; margin: 0; }
 .todos .text { flex: 1; overflow-wrap: anywhere; min-width: 0; display: flex; flex-direction: column; }
-.note { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.todos li.done .note { text-decoration: none; }
-.todos li.done .text { color: var(--done); text-decoration: line-through; }
+.note, .meta { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.todos li.done .title { color: var(--done); text-decoration: line-through; }
 .time { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; flex: none; }
 .edit-btn {
   flex: none; border: 0;
@@ -200,6 +226,36 @@ p.empty.card { padding: 20px; margin: 0; text-align: center; }
 .list-info h2 { font-size: 22px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .list-info .muted { margin: 2px 0 0; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
 .tag { flex: none; font-size: 11px; font-weight: 600; color: var(--chip-text); background: var(--chip); border-radius: 999px; padding: 2px 8px; }
+/* List colors: --lc is the list's pastel */
+.lc { background: color-mix(in srgb, var(--lc) 80%, var(--bg)) !important; color: var(--text) !important; }
+:root.dark .lc { background: color-mix(in srgb, var(--lc) 32%, var(--bg)) !important; }
+.chip.done.lc { background: transparent !important; color: var(--done) !important; }
+.list-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--lc); flex: none; }
+.search {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--card); border-radius: 999px; padding: 2px 6px 2px 14px;
+}
+.search input { flex: 1; background: transparent; padding: 10px 6px; font-size: 15px; }
+.search input:focus { border-bottom-color: transparent; }
+.search:focus-within { outline: 2px solid var(--accent); outline-offset: 1px; }
+.steps { display: flex; flex-direction: column; gap: 6px; }
+.steps li { display: flex; align-items: center; gap: 8px; }
+.steps input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--accent); flex: none; margin: 0; }
+.steps input[type="text"] { flex: 1; background: var(--bg); padding: 9px 12px; font-size: 15px; }
+.steps .step-del { border: 0; padding: 4px 8px; color: var(--muted); font-size: 16px; }
+.add-step { align-self: flex-start; font-size: 14px; text-decoration: none; color: var(--accent); font-weight: 600; }
+.emoji-field { flex: 0 0 110px; }
+.emoji-field input { text-align: center; font-size: 20px; }
+.swatches.left { justify-content: flex-start; padding-top: 6px; }
+.swatch.none { background: var(--bg) !important; position: relative; }
+.swatch.none::after { content: ""; position: absolute; left: 4px; right: 4px; top: 50%; height: 2px; background: var(--muted); transform: rotate(-45deg); }
+.toast-action { border: 1px solid currentColor; color: inherit; padding: 4px 14px; }
+.toast-action:hover { background: rgba(255,255,255,.15); }
+/* Dragging a todo to another day */
+.chip { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.chip.ghost { position: fixed; z-index: 60; pointer-events: none; transform: translate(-50%, -120%); box-shadow: 0 6px 18px rgba(0,0,0,.2); font-size: 13px; padding: 4px 10px; max-width: 220px; }
+.day.drop-target { outline: 2px dashed var(--accent); outline-offset: -2px; }
+body.dragging-chip, body.dragging-chip * { cursor: grabbing !important; }
 .filters { display: flex; gap: 8px; }
 .filter { color: var(--text); font-weight: 500; padding: 6px 16px; border-radius: 10px; }
 .filter.active { background: var(--accent-soft); border-color: transparent; font-weight: 700; }
@@ -307,7 +363,6 @@ button.danger-fill:hover { background: color-mix(in srgb, var(--danger) 85%, #00
 
 /* ---------- reminders ---------- */
 .hint { font-size: 12px; color: var(--muted); }
-.bell { flex: none; font-size: 12px; color: var(--muted); }
 .toast {
   position: fixed; z-index: 40; left: 50%; transform: translateX(-50%);
   top: calc(12px + env(safe-area-inset-top));

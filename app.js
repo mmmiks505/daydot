@@ -51,7 +51,14 @@ fixListIds();
 // When logged in, sync.js uploads changes to the account a moment after each save.
 const queueSync = () => { if (window.daydotSync) window.daydotSync.queue(); };
 const saveLists = () => { writeJSON(LISTS_KEY, lists); queueSync(); };
-const listName = (id) => (lists.find((l) => l.id === id) || lists[0]).name;
+const listOf = (id) => lists.find((l) => l.id === id) || lists[0];
+const listName = (id) => { const l = listOf(id); return (l.emoji ? l.emoji + " " : "") + l.name; };
+// Pastel colors a list can have; its todos use it on the calendar and in tags.
+const LIST_COLORS = { gray: "#d6d6d6", pink: "#f8bbd0", orange: "#ffd3a8", yellow: "#ffee99", green: "#b7e4c7", blue: "#bbdefb", purple: "#d1c4e9" };
+function tintWithList(node, listId) {
+  const c = LIST_COLORS[listOf(listId).color];
+  if (c) { node.classList.add("lc"); node.style.setProperty("--lc", c); }
+}
 const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 const saveTodos = () => { writeJSON(STORE_KEY, todos); queueSync(); };
 const saveSettings = () => { writeJSON(SETTINGS_KEY, settings); queueSync(); };
@@ -63,7 +70,26 @@ let filter = "open";
 let currentList = lists.some((l) => l.id === settings.list) ? settings.list : "all";
 
 const byTime = (a, b) => (a.time || "99:99").localeCompare(b.time || "99:99") || a.created - b.created;
-const todosOn = (k) => todos.filter((t) => t.date === k).sort(byTime);
+// Starred first, then the order you dragged them into, then by time.
+const rank = (a, b) => (!!b.star - !!a.star) || ((a.order ?? 1e15) - (b.order ?? 1e15)) || byTime(a, b);
+const todosOn = (k) => todos.filter((t) => t.date === k).sort(rank);
+
+/* ---------- repeating todos ---------- */
+// Ticking off a repeating todo adds the next one on its next date.
+const REPEAT_LABELS = { daily: "Every day", weekdays: "Every weekday", weekly: "Every week", monthly: "Every month" };
+function nextDate(k, repeat, monthDay) {
+  if (repeat === "daily") return addDays(k, 1);
+  if (repeat === "weekly") return addDays(k, 7);
+  if (repeat === "weekdays") {
+    let n = addDays(k, 1);
+    while ([0, 6].includes(fromKey(n).getDay())) n = addDays(n, 1);
+    return n;
+  }
+  const d = fromKey(k);
+  const want = monthDay || d.getDate();
+  const last = new Date(d.getFullYear(), d.getMonth() + 2, 0).getDate();
+  return keyOf(new Date(d.getFullYear(), d.getMonth() + 1, Math.min(want, last)));
+}
 
 function addTodo(text, date, time, listId) {
   todos.push({
@@ -76,6 +102,23 @@ function addTodo(text, date, time, listId) {
 function setDone(t, done) {
   t.done = done;
   t.doneAt = done ? Date.now() : undefined;
+  if (done && t.repeat && !todos.some((x) => x.id === t.nextId)) {
+    const base = t.date || todayKey();
+    const next = JSON.parse(JSON.stringify(t));
+    Object.assign(next, {
+      id: newId(), date: nextDate(base, t.repeat, t.repeatDay), done: false, created: Date.now(),
+      repeatDay: t.repeatDay || fromKey(base).getDate(),
+    });
+    delete next.doneAt; delete next.reminded; delete next.nextId;
+    (next.subtasks || []).forEach((st) => { st.done = false; });
+    t.nextId = next.id;
+    todos.push(next);
+    notify(`Next one added for ${friendlyDay(next.date)}.`);
+  } else if (!done && t.nextId) {
+    // Unticked by mistake: take back the next one, unless it's been ticked too.
+    todos = todos.filter((x) => !(x.id === t.nextId && !x.done));
+    delete t.nextId;
+  }
   saveTodos();
   renderAll();
 }
@@ -84,31 +127,127 @@ function removeTodo(t) {
   saveTodos();
   renderAll();
 }
+function deleteWithUndo(t) {
+  const at = todos.indexOf(t);
+  removeTodo(t);
+  showToast(`Deleted "${t.text}"`, "🗑", { label: "Undo", run: () => { todos.splice(Math.max(at, 0), 0, t); saveTodos(); renderAll(); } });
+}
 
-/* A todo row with checkbox, text, time and delete. */
-function todoItem(t, { showList = false } = {}) {
+/* A todo row: checkbox, text with a small details line, star and Edit.
+   Swipe right to tick it off, swipe left to delete. */
+function todoItem(t, { showList = false, reorder = null } = {}) {
   const li = el("li", t.done ? "done" : "");
+  li.dataset.id = t.id;
+  const row = el("div", "row");
+  if (reorder) {
+    const handle = el("span", "handle", "⋮⋮");
+    handle.title = "Drag to reorder";
+    handle.setAttribute("aria-hidden", "true");
+    addReorder(handle, li, reorder);
+    row.append(handle);
+  }
   const cb = el("input");
   cb.type = "checkbox";
   cb.checked = t.done;
   cb.setAttribute("aria-label", `Mark "${t.text}" done`);
   cb.addEventListener("change", () => setDone(t, cb.checked));
+
+  const text = el("span", "text");
+  text.append(el("span", "title", t.text));
+  const bits = [];
+  if (t.repeat) bits.push("🔁 " + REPEAT_LABELS[t.repeat]);
+  if (remindAt(t) && !t.done) bits.push("🔔");
+  if (t.subtasks && t.subtasks.length) bits.push(`☑ ${t.subtasks.filter((x) => x.done).length}/${t.subtasks.length}`);
+  if (t.notes) bits.push(t.notes.split("\n")[0]);
+  if (bits.length) text.append(el("span", "meta", bits.join(" · ")));
+  row.append(cb, text);
+
+  if (showList) {
+    const tag = el("span", "tag", listName(t.listId));
+    tintWithList(tag, t.listId);
+    row.append(tag);
+  }
+  row.append(el("span", "time", formatTime(t.time)));
+
+  const star = el("button", "star-btn" + (t.star ? " on" : ""), t.star ? "★" : "☆");
+  star.type = "button";
+  star.setAttribute("aria-label", t.star ? `Unstar "${t.text}"` : `Star "${t.text}"`);
+  star.setAttribute("aria-pressed", !!t.star);
+  star.addEventListener("click", () => { t.star = !t.star; saveTodos(); renderAll(); });
+
   const edit = el("button", "edit-btn", "Edit");
   edit.type = "button";
   edit.setAttribute("aria-label", `Edit "${t.text}"`);
   edit.addEventListener("click", () => openEditor(t));
-  const text = el("span", "text");
-  text.append(el("span", null, t.text));
-  if (t.notes) text.append(el("span", "note", t.notes.split("\n")[0]));
-  li.append(cb, text);
-  if (showList) li.append(el("span", "tag", listName(t.listId)));
-  if (remindAt(t) && !t.done) {
-    const bell = el("span", "bell", "🔔");
-    bell.title = "Reminder: " + REMIND_LABELS[t.remind];
-    li.append(bell);
-  }
-  li.append(el("span", "time", formatTime(t.time)), edit);
+  row.append(star, edit);
+  li.append(row);
+  addSwipe(li, row, t);
   return li;
+}
+
+/* Swipe a row sideways: right ticks it off (or back), left deletes it with Undo. */
+function addSwipe(li, row, t) {
+  let x0 = 0, y0 = 0, dx = 0, id = null, tracking = false, sideways = false;
+  row.addEventListener("pointerdown", (e) => {
+    if (e.target.closest("button, input, .handle") || (e.pointerType === "mouse" && e.button !== 0)) return;
+    x0 = e.clientX; y0 = e.clientY; dx = 0; id = e.pointerId; tracking = true; sideways = false;
+  });
+  row.addEventListener("pointermove", (e) => {
+    if (!tracking || e.pointerId !== id) return;
+    const mx = e.clientX - x0, my = e.clientY - y0;
+    if (!sideways) {
+      if (Math.abs(mx) < 10 && Math.abs(my) < 10) return;
+      if (Math.abs(my) > Math.abs(mx)) { tracking = false; return; } // scrolling
+      sideways = true;
+      try { row.setPointerCapture(id); } catch { /* pointer already gone */ }
+      li.classList.add("swiping");
+    }
+    dx = Math.max(-150, Math.min(150, mx));
+    row.style.transform = `translateX(${dx}px)`;
+    li.dataset.swipe = dx > 0 ? (t.done ? "undo" : "done") : "delete";
+    li.classList.toggle("armed", Math.abs(dx) > 80);
+  });
+  const end = (cancel) => {
+    if (!tracking) return;
+    tracking = false;
+    li.classList.remove("swiping", "armed");
+    row.style.transform = "";
+    if (!sideways || cancel) return;
+    if (dx > 80) setDone(t, !t.done);
+    else if (dx < -80) deleteWithUndo(t);
+    else delete li.dataset.swipe;
+  };
+  row.addEventListener("pointerup", () => end(false));
+  row.addEventListener("pointercancel", () => end(true));
+}
+
+/* Drag the ⋮⋮ handle to put todos in your own order. */
+function addReorder(handle, li, groupKey) {
+  handle.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const ul = li.parentElement;
+    try { handle.setPointerCapture(e.pointerId); } catch { /* pointer already gone */ }
+    li.classList.add("dragging");
+    const move = (ev) => {
+      const over = document.elementFromPoint(ev.clientX, ev.clientY)?.closest("li");
+      if (!over || over === li || over.parentElement !== ul) return;
+      const r = over.getBoundingClientRect();
+      ul.insertBefore(li, ev.clientY < r.top + r.height / 2 ? over : over.nextSibling);
+    };
+    const up = () => {
+      handle.removeEventListener("pointermove", move);
+      handle.removeEventListener("pointerup", up);
+      handle.removeEventListener("pointercancel", up);
+      li.classList.remove("dragging");
+      [...ul.children].forEach((n, i) => { const x = todos.find((t) => t.id === n.dataset.id); if (x) x.order = i; });
+      saveTodos();
+      renderAll();
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", up);
+    handle.addEventListener("pointercancel", up);
+  });
 }
 
 /* ---------- add / edit screen ---------- */
@@ -117,17 +256,56 @@ function openEditor(todo, date) {
   editing = todo || null;
   $("edit-title").textContent = todo ? "Edit todo" : "New todo";
   $("edit-list").innerHTML = "";
-  lists.forEach((l) => $("edit-list").append(new Option(l.name, l.id)));
+  lists.forEach((l) => $("edit-list").append(new Option(listName(l.id), l.id)));
   $("edit-list").value = todo ? todo.listId : currentList !== "all" ? currentList : lists[0].id;
   $("edit-text").value = todo ? todo.text : "";
   $("edit-notes").value = todo ? todo.notes || "" : "";
   $("edit-date").value = todo ? todo.date : date || "";
   $("edit-time").value = todo ? todo.time : "";
   $("edit-remind").value = todo && todo.remind != null ? String(todo.remind) : "";
+  $("edit-repeat").value = todo && todo.repeat ? todo.repeat : "";
+  $("edit-steps").innerHTML = "";
+  (todo && todo.subtasks || []).forEach((st) => addStepRow(st));
+  updateRepeatHint();
   $("edit-delete").hidden = !todo;
   updateRemindHint();
   openOverlay("edit-screen");
   if (!todo) setTimeout(() => $("edit-text").focus(), 50);
+}
+
+function addStepRow(st = { id: newId(), text: "", done: false }) {
+  const li = el("li");
+  li.dataset.id = st.id;
+  const cb = el("input");
+  cb.type = "checkbox";
+  cb.checked = !!st.done;
+  cb.setAttribute("aria-label", "Step done");
+  const input = el("input");
+  input.type = "text";
+  input.value = st.text;
+  input.maxLength = 120;
+  input.placeholder = "A step";
+  input.setAttribute("aria-label", "Step");
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); addStepRow().querySelector('input[type="text"]').focus(); }
+  });
+  const del = el("button", "step-del", "✕");
+  del.type = "button";
+  del.setAttribute("aria-label", "Remove step");
+  del.addEventListener("click", () => li.remove());
+  li.append(cb, input, del);
+  $("edit-steps").append(li);
+  return li;
+}
+const readSteps = () => [...$("edit-steps").children]
+  .map((li) => ({ id: li.dataset.id, text: li.querySelector('input[type="text"]').value.trim(), done: li.querySelector('input[type="checkbox"]').checked }))
+  .filter((st) => st.text);
+
+function updateRepeatHint() {
+  const r = $("edit-repeat").value;
+  $("repeat-hint").textContent = !r ? "" : $("edit-date").value
+    ? "When you tick it off, the next one is added automatically."
+    : "No date picked, so it starts today. When you tick it off, the next one is added.";
 }
 
 /* ---------- reminders ---------- */
@@ -165,12 +343,16 @@ if ("serviceWorker" in navigator && location.protocol !== "file:") {
   navigator.serviceWorker.register("sw.js").then((r) => { swReg = r; }).catch(() => {});
 }
 
-function showToast(text, icon = "🔔") {
+function showToast(text, icon = "🔔", action = null) {
   $("toast-text").textContent = text;
   $("toast").querySelector(".toast-icon").textContent = icon;
+  const btn = $("toast-action");
+  btn.hidden = !action;
+  btn.onclick = action ? () => { $("toast").hidden = true; action.run(); } : null;
+  if (action) btn.textContent = action.label;
   $("toast").hidden = false;
   clearTimeout(showToast.timer);
-  showToast.timer = setTimeout(() => { $("toast").hidden = true; }, 12000);
+  showToast.timer = setTimeout(() => { $("toast").hidden = true; }, action ? 6000 : 12000);
 }
 
 function fireReminder(t) {
@@ -294,10 +476,29 @@ const overlayOpen = () => OVERLAYS.some((id) => !$(id).hidden);
 
 /* ---------- lists ---------- */
 let editingList = null;
+let listColorChoice = "";
+function renderListColors() {
+  const wrap = $("list-colors");
+  wrap.innerHTML = "";
+  [["", "No color"], ...Object.keys(LIST_COLORS).map((k) => [k, k[0].toUpperCase() + k.slice(1)])].forEach(([key, name]) => {
+    const b = el("button", "swatch" + (key ? "" : " none"));
+    b.type = "button";
+    b.setAttribute("role", "radio");
+    b.setAttribute("aria-label", name);
+    b.title = name;
+    b.setAttribute("aria-checked", listColorChoice === key);
+    if (key) b.style.background = LIST_COLORS[key];
+    b.addEventListener("click", () => { listColorChoice = key; renderListColors(); });
+    wrap.append(b);
+  });
+}
 function openListEditor(list) {
   editingList = list || null;
   $("list-screen-title").textContent = list ? "Edit list" : "New list";
   $("list-name").value = list ? list.name : "";
+  $("list-emoji").value = list && list.emoji ? list.emoji : "";
+  listColorChoice = list && list.color ? list.color : "";
+  renderListColors();
   $("list-delete").hidden = !list || lists.length < 2;
   openOverlay("list-screen");
   setTimeout(() => $("list-name").focus(), 50);
@@ -331,15 +532,92 @@ function dayCell(k, { other = false, week = false } = {}) {
   cell.append(head);
 
   const max = week ? Infinity : 3;
+  cell.dataset.key = k;
   list.slice(0, max).forEach((t) => {
-    cell.append(el("span", "chip" + (t.done ? " done" : ""), (t.time ? shortTime(t.time) + " " : "") + t.text));
+    const chip = el("span", "chip" + (t.done ? " done" : ""), (t.star ? "★ " : "") + (t.time ? shortTime(t.time) + " " : "") + t.text);
+    tintWithList(chip, t.listId);
+    addChipDrag(chip, t);
+    cell.append(chip);
   });
   if (list.length > max) cell.append(el("span", "more", `+${list.length - max} more`));
   if (week && !list.length) cell.append(el("span", "more", "Nothing planned"));
   if (list.length) cell.append(el("span", "dot" + (list.every((t) => t.done) ? " all-done" : "")));
 
-  cell.addEventListener("click", () => openDay(k)); // tap a day to see and add its todos
+  cell.addEventListener("click", () => { if (!justDragged) openDay(k); }); // tap a day to see and add its todos
   return cell;
+}
+
+/* Drag a todo on the calendar onto another day to move it.
+   Mouse: just drag. Touch: press and hold for a moment, then drag. */
+let justDragged = false;
+let chipDragging = false;
+document.addEventListener("touchmove", (e) => { if (chipDragging) e.preventDefault(); }, { passive: false });
+function addChipDrag(chip, t) {
+  chip.addEventListener("pointerdown", (e) => {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    const sx = e.clientX, sy = e.clientY, pid = e.pointerId;
+    let ghost = null, target = null, holdTimer = null;
+    const start = () => {
+      chipDragging = true;
+      try { chip.setPointerCapture(pid); } catch { /* pointer already gone */ }
+      ghost = chip.cloneNode(true);
+      ghost.classList.add("ghost");
+      document.body.append(ghost);
+      document.body.classList.add("dragging-chip");
+      if (navigator.vibrate) navigator.vibrate(15);
+      place(sx, sy);
+    };
+    const place = (x, y) => {
+      ghost.style.left = x + "px";
+      ghost.style.top = y + "px";
+      const over = document.elementFromPoint(x, y)?.closest(".day[data-key]");
+      if (over !== target) {
+        if (target) target.classList.remove("drop-target");
+        target = over;
+        if (target) target.classList.add("drop-target");
+      }
+    };
+    const move = (ev) => {
+      if (ev.pointerId !== pid) return;
+      const far = Math.hypot(ev.clientX - sx, ev.clientY - sy) > 8;
+      if (!chipDragging) {
+        if (!far) return;
+        if (e.pointerType === "mouse") start();
+        else { cleanup(); return; } // moved before the hold finished: it's a scroll
+      }
+      place(ev.clientX, ev.clientY);
+    };
+    const cleanup = () => {
+      clearTimeout(holdTimer);
+      chip.removeEventListener("pointermove", move);
+      chip.removeEventListener("pointerup", up);
+      chip.removeEventListener("pointercancel", cancel);
+    };
+    const finish = (drop) => {
+      cleanup();
+      if (!chipDragging) return;
+      chipDragging = false;
+      ghost.remove();
+      document.body.classList.remove("dragging-chip");
+      if (target) target.classList.remove("drop-target");
+      justDragged = true;
+      setTimeout(() => { justDragged = false; }, 50);
+      const key = drop && target && target.dataset.key;
+      if (key && key !== t.date) {
+        t.date = key;
+        delete t.reminded;
+        saveTodos();
+        renderAll();
+        notify(`Moved "${t.text}" to ${friendlyDay(key)}.`);
+      }
+    };
+    const up = () => finish(true);
+    const cancel = () => finish(false);
+    if (e.pointerType !== "mouse") holdTimer = setTimeout(start, 350);
+    chip.addEventListener("pointermove", move);
+    chip.addEventListener("pointerup", up);
+    chip.addEventListener("pointercancel", cancel);
+  });
 }
 
 function renderCalendar() {
@@ -429,13 +707,15 @@ function renderListChips() {
     b.type = "button";
     b.setAttribute("role", "tab");
     b.setAttribute("aria-selected", currentList === id);
+    const color = id !== "all" && LIST_COLORS[listOf(id).color];
+    if (color) { const dot = el("span", "list-dot"); dot.style.setProperty("--lc", color); b.append(dot); }
     b.append(el("span", null, label));
     if (count) b.append(el("span", "count", count));
     b.addEventListener("click", () => chooseList(id));
     wrap.append(b);
   };
   chip("all", "All", todos.filter((x) => !x.done).length);
-  lists.forEach((l) => chip(l.id, l.name, todos.filter((x) => !x.done && x.listId === l.id).length));
+  lists.forEach((l) => chip(l.id, listName(l.id), todos.filter((x) => !x.done && x.listId === l.id).length));
   const add = el("button", "list-chip new", "+ New list");
   add.type = "button";
   add.addEventListener("click", () => openListEditor(null));
@@ -455,15 +735,20 @@ function renderTodoList() {
     ? `${open.length} to do${overdue ? ` · ${overdue} overdue` : ""}`
     : "All caught up!";
 
-  document.querySelectorAll(".filter").forEach((b) => {
+  $("todo-search").addEventListener("input", renderTodoList);
+document.querySelectorAll(".filter").forEach((b) => {
     const on = b.dataset.filter === filter;
     b.classList.toggle("active", on);
     b.setAttribute("aria-selected", on);
   });
 
   let list = filter === "open" ? open : filter === "done" ? scope.filter((x) => x.done) : [...scope];
+  const q = $("todo-search").value.trim().toLowerCase();
+  if (q) {
+    list = list.filter((x) => [x.text, x.notes || "", ...(x.subtasks || []).map((st) => st.text)].join(" ").toLowerCase().includes(q));
+  }
   // Dated todos first (soonest first), then ones with no date.
-  list.sort((a, b) => (!a.date - !b.date) || a.date.localeCompare(b.date) || byTime(a, b));
+  list.sort((a, b) => (!a.date - !b.date) || a.date.localeCompare(b.date) || rank(a, b));
   if (filter === "done") list.reverse();
 
   // Group: all overdue together, then one group per date, then "No date".
@@ -478,7 +763,7 @@ function renderTodoList() {
   const wrap = $("todo-groups");
   wrap.innerHTML = "";
   if (!list.length) {
-    const msg = filter === "done" ? "Nothing finished yet." : "Nothing here yet. Tap + Add todo to add one.";
+    const msg = q ? `Nothing matches "${$("todo-search").value.trim()}".` : filter === "done" ? "Nothing finished yet." : "Nothing here yet. Tap + Add todo to add one.";
     wrap.append(el("p", "empty card", msg));
     return;
   }
@@ -502,7 +787,7 @@ function renderTodoList() {
     }
     const ul = el("ul", "todos");
     items.forEach((x) => {
-      const li = todoItem(x, { showList });
+      const li = todoItem(x, { showList, reorder: filter !== "done" && !q && items.length > 1 ? g : null });
       if (g === "overdue") li.querySelector(".time").textContent = friendlyDay(x.date) + (x.time ? " " + shortTime(x.time) : "");
       ul.append(li);
     });
@@ -659,6 +944,8 @@ $("todo-add").addEventListener("click", () => openEditor(null, ""));
 $("edit-cancel").addEventListener("click", closeOverlay);
 $("list-cancel").addEventListener("click", closeOverlay);
 ["edit-date", "edit-time", "edit-remind"].forEach((id) => $(id).addEventListener("input", updateRemindHint));
+["edit-date", "edit-repeat"].forEach((id) => $(id).addEventListener("input", updateRepeatHint));
+$("add-step").addEventListener("click", () => addStepRow().querySelector('input[type="text"]').focus());
 $("edit-ics").addEventListener("click", () => {
   const remind = $("edit-remind").value === "" ? null : Number($("edit-remind").value);
   downloadIcs({ id: editing ? editing.id : newId(), text: $("edit-text").value.trim() || "Todo", notes: $("edit-notes").value.trim(), date: $("edit-date").value, time: $("edit-time").value, remind });
@@ -670,10 +957,11 @@ $("list-form").addEventListener("submit", (e) => {
   e.preventDefault();
   const name = $("list-name").value.trim();
   if (!name) return;
+  const emoji = $("list-emoji").value.trim();
   if (editingList) {
-    editingList.name = name;
+    Object.assign(editingList, { name, emoji, color: listColorChoice });
   } else {
-    const l = { id: newId(), name };
+    const l = { id: newId(), name, emoji, color: listColorChoice };
     lists.push(l);
     currentList = settings.list = l.id;
     saveSettings();
@@ -701,18 +989,22 @@ $("edit-form").addEventListener("submit", (e) => {
   const listId = $("edit-list").value;
   const remind = $("edit-remind").value === "" ? null : Number($("edit-remind").value);
   const notes = $("edit-notes").value.trim();
+  const repeat = $("edit-repeat").value || null;
+  const subtasks = readSteps();
+  let finalDate = date;
+  if (repeat && !finalDate) finalDate = todayKey();
   if (!text) return;
   if (remind != null && !date) { updateRemindHint(); $("edit-date").focus(); return; }
   if (remind != null) askNotifyPermission();
   if (editing) {
-    Object.assign(editing, { text, date, time: $("edit-time").value, listId, remind, notes });
+    if (editing.repeat !== repeat || editing.date !== finalDate) delete editing.repeatDay;
+    Object.assign(editing, { text, date: finalDate, time: $("edit-time").value, listId, remind, notes, repeat, subtasks });
     saveTodos();
     renderAll();
   } else {
     if (filter === "done") filter = "open";
-    addTodo(text, date, $("edit-time").value, listId);
-    todos[todos.length - 1].remind = remind;
-    todos[todos.length - 1].notes = notes;
+    addTodo(text, finalDate, $("edit-time").value, listId);
+    Object.assign(todos[todos.length - 1], { remind, notes, repeat, subtasks });
     saveTodos();
     renderAll();
   }
@@ -762,9 +1054,9 @@ $("import").addEventListener("change", async (e) => {
     if (!Array.isArray(list) || !list.every((x) => x && typeof x.text === "string" && (!x.date || /^\d{4}-\d{2}-\d{2}$/.test(x.date)))) throw new Error();
     if (!(await askConfirm(`Replace your todos with the ${list.length} in this file?`, "Replace"))) return;
     if (Array.isArray(data.lists) && data.lists.length && data.lists.every((l) => l && l.id && typeof l.name === "string")) {
-      lists = data.lists.map((l) => ({ id: String(l.id), name: l.name }));
+      lists = data.lists.map((l) => ({ id: String(l.id), name: l.name, emoji: l.emoji || "", color: l.color || "" }));
     }
-    todos = list.map((x, i) => ({ id: x.id || "i" + i + Date.now().toString(36), date: x.date || "", text: x.text, time: x.time || "", listId: x.listId, remind: x.remind ?? null, notes: typeof x.notes === "string" ? x.notes : "", reminded: x.reminded, done: !!x.done, doneAt: x.doneAt, created: x.created || Date.now() }));
+    todos = list.map((x, i) => ({ id: x.id || "i" + i + Date.now().toString(36), date: x.date || "", text: x.text, time: x.time || "", listId: x.listId, remind: x.remind ?? null, notes: typeof x.notes === "string" ? x.notes : "", repeat: x.repeat || null, repeatDay: x.repeatDay, star: !!x.star, order: x.order, subtasks: Array.isArray(x.subtasks) ? x.subtasks : [], reminded: x.reminded, done: !!x.done, doneAt: x.doneAt, created: x.created || Date.now() }));
     fixListIds();
     currentList = "all";
     saveLists();
