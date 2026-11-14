@@ -22,6 +22,7 @@
   --tabbar-h: 80px;
   --font: "Inter Tight", system-ui, -apple-system, "Segoe UI", sans-serif;
   --menu-font: "Quicksand", var(--font);
+  --title-font: "Playfair Display", Georgia, serif;
   color-scheme: light;
 }
 :root.dark {
@@ -95,7 +96,7 @@ button:focus-visible, a:focus-visible, .avatar:focus-within { outline: 2px solid
   background: var(--bg);
   margin: 0 -16px 4px;
 }
-.topbar h1 { font-size: 32px; font-weight: 700; letter-spacing: -0.02em; text-align: center; }
+.topbar h1 { font: italic 700 34px/1.1 var(--title-font); text-align: center; }
 .card {
   background: var(--card);
   border-radius: 24px;
@@ -199,7 +200,7 @@ p.empty.card { padding: 20px; margin: 0; text-align: center; }
 .day-screen-inner { max-width: 720px; margin: 0 auto; padding: calc(12px + env(safe-area-inset-top)) 16px 32px; }
 .day-screen-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; min-height: 44px; }
 .back { border: 0; padding: 8px 10px; font-size: 16px; }
-.day-screen h1 { font-size: 28px; font-weight: 700; text-align: center; margin-bottom: 14px; letter-spacing: -0.01em; }
+.day-screen h1 { font: italic 700 30px/1.15 var(--title-font); text-align: center; margin-bottom: 14px; }
 .day-screen .day-panel { display: block !important; }
 .day-screen #day-screen-body { background: var(--card); border-radius: 24px; padding: 16px 18px; }
 body.day-open { overflow: hidden; }
@@ -279,7 +280,7 @@ button.big { padding: 12px; font-size: 16px; }
 
 /* ---------- phones ---------- */
 @media (max-width: 860px) {
-  .topbar h1 { font-size: 28px; }
+  .topbar h1 { font-size: 30px; }
   .card { border-radius: 20px; padding: 14px; }
   .calendar.card { padding: 12px 8px; }
   .cal-head, .mode-seg { margin-left: 6px; margin-right: 6px; }
