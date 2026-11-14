@@ -83,7 +83,7 @@ ul { list-style: none; margin: 0; padding: 0; }
 .cal-layout[data-mode="day"] .weekdays,
 .cal-layout[data-mode="day"] .grid,
 .cal-layout:not([data-mode="day"]) .day-panel { display: none; }
-.grid-month .day { min-height: 118px; }
+.grid-month .day { min-height: 150px; }
 .cal-layout[data-mode="week"] .weekdays { display: none; }
 
 .cal-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
@@ -129,7 +129,7 @@ ul { list-style: none; margin: 0; padding: 0; }
 .dot { display: none; }
 
 /* week view: tall columns */
-.grid-week .week-day { min-height: 320px; }
+.grid-week .week-day { min-height: max(460px, calc(100vh - 260px)); }
 .grid-week .chip { white-space: normal; }
 
 /* ---------- todo rows ---------- */
@@ -232,13 +232,14 @@ body.day-open { overflow: hidden; }
 /* ---------- phones ---------- */
 @media (max-width: 860px) {
   .view { padding: 16px; }
-  .grid-month .day { min-height: 56px; padding: 4px; align-items: center; }
-  .grid-month .day .chip, .grid-month .day .more { display: none; }
-  .grid-month .day .dot { display: block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
-  .grid-month .day .dot.all-done { background: var(--done); }
+  .grid { gap: 3px; }
+  .grid-month .day { min-height: 92px; padding: 3px; gap: 2px; }
+  .grid-month .day .num { width: 22px; height: 22px; font-size: 12px; }
+  .grid-month .day .chip { font-size: 10px; padding: 1px 3px; border-radius: 4px; }
+  .grid-month .day .more { display: none; }
   /* week becomes a vertical list of days */
   .grid-week { grid-template-columns: 1fr; gap: 6px; }
-  .grid-week .week-day { min-height: 0; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px; }
+  .grid-week .week-day { min-height: 76px; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px; padding: 10px; }
   .grid-week .day-head { width: 72px; flex: none; }
   .grid-week .chip { white-space: nowrap; max-width: 100%; }
   .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
