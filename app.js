@@ -1,6 +1,7 @@
 // Daydot — todos and settings are saved in this browser's localStorage.
 const STORE_KEY = "todo-calendar:v1"; // kept from the first version so saved todos carry over
 const SETTINGS_KEY = "daydot:settings";
+const LISTS_KEY = "daydot:lists";
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, text) => {
   const n = document.createElement(tag);
@@ -39,6 +40,17 @@ function writeJSON(key, value) {
 }
 let todos = readJSON(STORE_KEY, []);
 const settings = Object.assign({ name: "", theme: "auto", weekStart: 0, mode: "month", color: "white" }, readJSON(SETTINGS_KEY, {}));
+// Named lists, like Homework or Shopping. Every todo belongs to one; older todos go in Personal.
+let lists = readJSON(LISTS_KEY, null) || [{ id: "personal", name: "Personal" }];
+if (!lists.length) lists = [{ id: "personal", name: "Personal" }];
+function fixListIds() {
+  const ids = new Set(lists.map((l) => l.id));
+  todos.forEach((t) => { if (!ids.has(t.listId)) t.listId = lists[0].id; if (t.date == null) t.date = ""; });
+}
+fixListIds();
+const saveLists = () => writeJSON(LISTS_KEY, lists);
+const listName = (id) => (lists.find((l) => l.id === id) || lists[0]).name;
+const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 const saveTodos = () => writeJSON(STORE_KEY, todos);
 const saveSettings = () => writeJSON(SETTINGS_KEY, settings);
 
@@ -46,14 +58,15 @@ const saveSettings = () => writeJSON(SETTINGS_KEY, settings);
 let selected = todayKey();
 let viewMonth = new Date(); viewMonth.setDate(1);
 let filter = "open";
+let currentList = lists.some((l) => l.id === settings.list) ? settings.list : "all";
 
 const byTime = (a, b) => (a.time || "99:99").localeCompare(b.time || "99:99") || a.created - b.created;
 const todosOn = (k) => todos.filter((t) => t.date === k).sort(byTime);
 
-function addTodo(text, date, time) {
+function addTodo(text, date, time, listId) {
   todos.push({
-    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-    date, text, time: time || "", done: false, created: Date.now(),
+    id: newId(),
+    date: date || "", text, time: time || "", listId: listId || lists[0].id, done: false, created: Date.now(),
   });
   saveTodos();
   renderAll();
@@ -71,7 +84,7 @@ function removeTodo(t) {
 }
 
 /* A todo row with checkbox, text, time and delete. */
-function todoItem(t) {
+function todoItem(t, { showList = false } = {}) {
   const li = el("li", t.done ? "done" : "");
   const cb = el("input");
   cb.type = "checkbox";
@@ -82,33 +95,62 @@ function todoItem(t) {
   edit.type = "button";
   edit.setAttribute("aria-label", `Edit "${t.text}"`);
   edit.addEventListener("click", () => openEditor(t));
-  li.append(cb, el("span", "text", t.text), el("span", "time", formatTime(t.time)), edit);
+  li.append(cb, el("span", "text", t.text));
+  if (showList) li.append(el("span", "tag", listName(t.listId)));
+  li.append(el("span", "time", formatTime(t.time)), edit);
   return li;
 }
 
 /* ---------- add / edit screen ---------- */
 let editing = null; // the todo being edited, or null when adding a new one
-
 function openEditor(todo, date) {
   editing = todo || null;
   $("edit-title").textContent = todo ? "Edit todo" : "New todo";
+  $("edit-list").innerHTML = "";
+  lists.forEach((l) => $("edit-list").append(new Option(l.name, l.id)));
+  $("edit-list").value = todo ? todo.listId : currentList !== "all" ? currentList : lists[0].id;
   $("edit-text").value = todo ? todo.text : "";
-  $("edit-date").value = todo ? todo.date : date || selected;
+  $("edit-date").value = todo ? todo.date : date || "";
   $("edit-time").value = todo ? todo.time : "";
   $("edit-delete").hidden = !todo;
-  $("edit-screen").hidden = false;
-  document.body.classList.add("day-open");
-  history.pushState({ ...(history.state || {}), edit: true }, "", location.href);
+  openOverlay("edit-screen");
   if (!todo) setTimeout(() => $("edit-text").focus(), 50);
 }
-function hideEditor() {
-  $("edit-screen").hidden = true;
+
+/* Full-screen forms get their own history entry, so Cancel, the back gesture or Esc closes them. */
+const OVERLAYS = ["edit-screen", "list-screen"];
+function openOverlay(id) {
+  $(id).hidden = false;
+  document.body.classList.add("day-open");
+  history.pushState({ ...(history.state || {}), overlay: true }, "", location.href);
+}
+function hideOverlays() {
+  OVERLAYS.forEach((id) => { $(id).hidden = true; });
   document.body.classList.toggle("day-open", !$("day-screen").hidden);
   editing = null;
+  editingList = null;
 }
-function closeEditor() {
-  if (history.state && history.state.edit) history.back(); // popstate hides it
-  else hideEditor();
+function closeOverlay() {
+  if (history.state && history.state.overlay) history.back(); // popstate hides it
+  else hideOverlays();
+}
+const overlayOpen = () => OVERLAYS.some((id) => !$(id).hidden);
+
+/* ---------- lists ---------- */
+let editingList = null;
+function openListEditor(list) {
+  editingList = list || null;
+  $("list-screen-title").textContent = list ? "Edit list" : "New list";
+  $("list-name").value = list ? list.name : "";
+  $("list-delete").hidden = !list || lists.length < 2;
+  openOverlay("list-screen");
+  setTimeout(() => $("list-name").focus(), 50);
+}
+function chooseList(id) {
+  currentList = id;
+  settings.list = id;
+  saveSettings();
+  renderTodoList();
 }
 
 /* ---------- calendar ---------- */
@@ -223,10 +265,36 @@ function step(n) {
 }
 
 /* ---------- to do list ---------- */
+function renderListChips() {
+  const wrap = $("list-chips");
+  wrap.innerHTML = "";
+  const chip = (id, label, count) => {
+    const b = el("button", "list-chip");
+    b.type = "button";
+    b.setAttribute("role", "tab");
+    b.setAttribute("aria-selected", currentList === id);
+    b.append(el("span", null, label));
+    if (count) b.append(el("span", "count", count));
+    b.addEventListener("click", () => chooseList(id));
+    wrap.append(b);
+  };
+  chip("all", "All", todos.filter((x) => !x.done).length);
+  lists.forEach((l) => chip(l.id, l.name, todos.filter((x) => !x.done && x.listId === l.id).length));
+  const add = el("button", "list-chip new", "+ New list");
+  add.type = "button";
+  add.addEventListener("click", () => openListEditor(null));
+  wrap.append(add);
+}
+
 function renderTodoList() {
+  renderListChips();
   const t = todayKey();
-  const open = todos.filter((x) => !x.done);
-  const overdue = open.filter((x) => x.date < t).length;
+  const all = currentList === "all";
+  const scope = all ? todos : todos.filter((x) => x.listId === currentList);
+  const open = scope.filter((x) => !x.done);
+  const overdue = open.filter((x) => x.date && x.date < t).length;
+  $("list-title").textContent = all ? "All lists" : listName(currentList);
+  $("list-edit").hidden = all;
   $("todo-summary").textContent = open.length
     ? `${open.length} to do${overdue ? ` · ${overdue} overdue` : ""}`
     : "All caught up!";
@@ -237,30 +305,35 @@ function renderTodoList() {
     b.setAttribute("aria-selected", on);
   });
 
-  let list = filter === "open" ? open : filter === "done" ? todos.filter((x) => x.done) : [...todos];
-  list.sort((a, b) => a.date.localeCompare(b.date) || byTime(a, b));
+  let list = filter === "open" ? open : filter === "done" ? scope.filter((x) => x.done) : [...scope];
+  // Dated todos first (soonest first), then ones with no date.
+  list.sort((a, b) => (!a.date - !b.date) || a.date.localeCompare(b.date) || byTime(a, b));
   if (filter === "done") list.reverse();
 
-  // Group: all overdue together, then one group per date.
+  // Group: all overdue together, then one group per date, then "No date".
   const groups = new Map();
   list.forEach((x) => {
-    const g = filter === "open" && x.date < t ? "overdue" : x.date;
+    const g = !x.date ? "none" : filter === "open" && x.date < t ? "overdue" : x.date;
     if (!groups.has(g)) groups.set(g, []);
     groups.get(g).push(x);
   });
+  if (groups.has("none")) { const v = groups.get("none"); groups.delete("none"); groups.set("none", v); }
 
   const wrap = $("todo-groups");
   wrap.innerHTML = "";
   if (!list.length) {
-    const msg = filter === "done" ? "Nothing finished yet." : "Nothing to do. Add a todo above!";
+    const msg = filter === "done" ? "Nothing finished yet." : "Nothing here yet. Tap + Add todo to add one.";
     wrap.append(el("p", "empty card", msg));
     return;
   }
+  const showList = all && lists.length > 1;
   groups.forEach((items, g) => {
     const sec = el("section", "card group" + (g === "overdue" ? " overdue" : ""));
     const h = el("h2");
     if (g === "overdue") {
       h.textContent = "Overdue";
+    } else if (g === "none") {
+      h.textContent = "No date";
     } else {
       const link = el("button", "group-link", friendlyDay(g));
       link.type = "button";
@@ -273,7 +346,7 @@ function renderTodoList() {
     }
     const ul = el("ul", "todos");
     items.forEach((x) => {
-      const li = todoItem(x);
+      const li = todoItem(x, { showList });
       if (g === "overdue") li.querySelector(".time").textContent = friendlyDay(x.date) + (x.time ? " " + shortTime(x.time) : "");
       ul.append(li);
     });
@@ -399,7 +472,7 @@ function showTab() {
 
 function renderBadge() {
   const t = todayKey();
-  const n = todos.filter((x) => !x.done && x.date <= t).length;
+  const n = todos.filter((x) => !x.done && x.date && x.date <= t).length;
   const b = $("todo-badge");
   b.hidden = !n;
   b.textContent = n > 9 ? "9+" : n;
@@ -426,30 +499,61 @@ $("mode-seg").addEventListener("click", (e) => {
 });
 
 $("day-add").addEventListener("click", () => openEditor(null, selected));
-$("todo-add").addEventListener("click", () => openEditor(null, todayKey()));
-$("edit-cancel").addEventListener("click", closeEditor);
+$("todo-add").addEventListener("click", () => openEditor(null, ""));
+$("edit-cancel").addEventListener("click", closeOverlay);
+$("list-cancel").addEventListener("click", closeOverlay);
+$("list-edit").addEventListener("click", () => openListEditor(lists.find((l) => l.id === currentList)));
+$("list-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const name = $("list-name").value.trim();
+  if (!name) return;
+  if (editingList) {
+    editingList.name = name;
+  } else {
+    const l = { id: newId(), name };
+    lists.push(l);
+    currentList = settings.list = l.id;
+    saveSettings();
+  }
+  saveLists();
+  renderAll();
+  closeOverlay();
+});
+$("list-delete").addEventListener("click", () => {
+  const l = editingList;
+  if (!l || lists.length < 2) return;
+  const n = todos.filter((x) => x.listId === l.id).length;
+  if (!confirm(`Delete "${l.name}"${n ? ` and its ${n} todo${n === 1 ? "" : "s"}` : ""}? This can't be undone.`)) return;
+  lists = lists.filter((x) => x.id !== l.id);
+  todos = todos.filter((x) => x.listId !== l.id);
+  currentList = settings.list = "all";
+  saveLists(); saveTodos(); saveSettings();
+  renderAll();
+  closeOverlay();
+});
 $("edit-form").addEventListener("submit", (e) => {
   e.preventDefault();
   const text = $("edit-text").value.trim();
   const date = $("edit-date").value;
-  if (!text || !date) return;
+  const listId = $("edit-list").value;
+  if (!text) return;
   if (editing) {
-    Object.assign(editing, { text, date, time: $("edit-time").value });
+    Object.assign(editing, { text, date, time: $("edit-time").value, listId });
     saveTodos();
     renderAll();
   } else {
     if (filter === "done") filter = "open";
-    addTodo(text, date, $("edit-time").value);
+    addTodo(text, date, $("edit-time").value, listId);
   }
-  closeEditor();
+  closeOverlay();
 });
 $("edit-delete").addEventListener("click", () => {
   if (!editing || !confirm(`Delete "${editing.text}"?`)) return;
   removeTodo(editing);
-  closeEditor();
+  closeOverlay();
 });
 window.addEventListener("popstate", () => {
-  if (!(history.state && history.state.edit) && !$("edit-screen").hidden) hideEditor();
+  if (!(history.state && history.state.overlay) && overlayOpen()) hideOverlays();
 });
 document.querySelectorAll(".filter").forEach((b) =>
   b.addEventListener("click", () => { filter = b.dataset.filter; renderTodoList(); }));
@@ -469,7 +573,7 @@ $("week-seg").addEventListener("click", (e) => {
 });
 
 $("export").addEventListener("click", () => {
-  const blob = new Blob([JSON.stringify({ app: "daydot", todos, settings }, null, 2)], { type: "application/json" });
+  const blob = new Blob([JSON.stringify({ app: "daydot", todos, lists, settings }, null, 2)], { type: "application/json" });
   const a = el("a");
   a.href = URL.createObjectURL(blob);
   a.download = `daydot-${todayKey()}.json`;
@@ -483,9 +587,15 @@ $("import").addEventListener("change", async (e) => {
   try {
     const data = JSON.parse(await file.text());
     const list = Array.isArray(data) ? data : data.todos;
-    if (!Array.isArray(list) || !list.every((x) => x && typeof x.text === "string" && /^\d{4}-\d{2}-\d{2}$/.test(x.date))) throw new Error();
+    if (!Array.isArray(list) || !list.every((x) => x && typeof x.text === "string" && (!x.date || /^\d{4}-\d{2}-\d{2}$/.test(x.date)))) throw new Error();
     if (!confirm(`Replace your todos with the ${list.length} in this file?`)) return;
-    todos = list.map((x, i) => ({ id: x.id || "i" + i + Date.now().toString(36), date: x.date, text: x.text, time: x.time || "", done: !!x.done, doneAt: x.doneAt, created: x.created || Date.now() }));
+    if (Array.isArray(data.lists) && data.lists.length && data.lists.every((l) => l && l.id && typeof l.name === "string")) {
+      lists = data.lists.map((l) => ({ id: String(l.id), name: l.name }));
+    }
+    todos = list.map((x, i) => ({ id: x.id || "i" + i + Date.now().toString(36), date: x.date || "", text: x.text, time: x.time || "", listId: x.listId, done: !!x.done, doneAt: x.doneAt, created: x.created || Date.now() }));
+    fixListIds();
+    currentList = "all";
+    saveLists();
     saveTodos();
     renderAll();
   } catch {
@@ -506,7 +616,7 @@ $("day-prev").addEventListener("click", () => moveDay(-1));
 $("day-next").addEventListener("click", () => moveDay(1));
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
-  if (!$("edit-screen").hidden) closeEditor();
+  if (overlayOpen()) closeOverlay();
   else if (!$("day-screen").hidden) closeDay();
 });
 window.addEventListener("hashchange", showTab);

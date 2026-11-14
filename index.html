@@ -72,10 +72,14 @@
           <span>What do you need to do?</span>
           <input id="edit-text" maxlength="120" required placeholder="e.g. Buy groceries">
         </label>
+        <label class="field">
+          <span>List</span>
+          <select id="edit-list"></select>
+        </label>
         <div class="field-row">
           <label class="field">
-            <span>Date</span>
-            <input id="edit-date" type="date" required>
+            <span>Date <em>(optional)</em></span>
+            <input id="edit-date" type="date">
           </label>
           <label class="field">
             <span>Time <em>(optional)</em></span>
@@ -88,11 +92,33 @@
     </div>
   </section>
 
+  <!-- New / rename a list -->
+  <section class="day-screen edit-screen" id="list-screen" hidden aria-labelledby="list-screen-title">
+    <div class="day-screen-inner">
+      <header class="day-screen-head">
+        <button type="button" class="back" id="list-cancel">‹ Cancel</button>
+      </header>
+      <h1 id="list-screen-title">New list</h1>
+      <form id="list-form" class="card edit-form" autocomplete="off">
+        <label class="field">
+          <span>List name</span>
+          <input id="list-name" maxlength="30" required placeholder="e.g. Homework, Shopping">
+        </label>
+        <button type="submit" class="primary big">Save</button>
+        <button type="button" class="danger big" id="list-delete">Delete list</button>
+      </form>
+    </div>
+  </section>
+
   <!-- To do -->
   <main class="view narrow" id="view-todo" data-view="todo" hidden>
     <header class="topbar"><h1>To do</h1></header>
+    <div class="list-chips" id="list-chips" role="tablist" aria-label="Your lists"></div>
     <div class="list-head">
-      <p class="muted" id="todo-summary"></p>
+      <div class="list-info">
+        <h2 id="list-title"></h2>
+        <p class="muted"><span id="todo-summary"></span><button type="button" class="link-btn" id="list-edit" hidden>Edit list</button></p>
+      </div>
       <button type="button" class="add-btn" id="todo-add">+ Add todo</button>
     </div>
     <div class="filters" role="tablist" aria-label="Show">

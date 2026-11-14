@@ -50,7 +50,7 @@ body {
   -webkit-font-smoothing: antialiased;
   padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
 }
-button, input { font: inherit; color: inherit; }
+button, input, select { font: inherit; color: inherit; }
 h1, h2 { margin: 0; }
 h2 { font-size: 18px; font-weight: 700; }
 ul { list-style: none; margin: 0; padding: 0; }
@@ -82,7 +82,13 @@ input {
   padding: 10px 12px;
   min-width: 0;
 }
-input:focus { outline: none; border-bottom-color: var(--accent); }
+select {
+  background: var(--bg); border: 0; border-bottom: 2px solid transparent; border-radius: 12px;
+  padding: 12px 14px; font-size: 16px; appearance: none; cursor: pointer;
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: calc(100% - 20px) 50%, calc(100% - 15px) 50%; background-size: 5px 5px; background-repeat: no-repeat;
+}
+input:focus, select:focus { outline: none; border-bottom-color: var(--accent); }
 button:focus-visible, a:focus-visible, .avatar:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* ---------- page layout ---------- */
@@ -178,6 +184,16 @@ p.empty.card { padding: 20px; margin: 0; text-align: center; }
 .day-panel .list-head { margin-bottom: 8px; }
 
 /* ---------- to do page ---------- */
+.list-chips { display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 4px; margin: 0 -2px; scrollbar-width: none; }
+.list-chips::-webkit-scrollbar { display: none; }
+.list-chip { flex: none; color: var(--text); font-weight: 500; padding: 7px 14px; gap: 6px; }
+.list-chip[aria-selected="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 700; }
+.list-chip .count { font-size: 12px; opacity: .75; font-weight: 600; }
+.list-chip.new { border-style: dashed; color: var(--muted); }
+.list-info { min-width: 0; }
+.list-info h2 { font-size: 22px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list-info .muted { margin: 2px 0 0; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.tag { flex: none; font-size: 11px; font-weight: 600; color: var(--chip-text); background: var(--chip); border-radius: 999px; padding: 2px 8px; }
 .filters { display: flex; gap: 8px; }
 .filter { color: var(--text); font-weight: 500; padding: 6px 16px; border-radius: 10px; }
 .filter.active { background: var(--accent-soft); border-color: transparent; font-weight: 700; }
