@@ -3,7 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Todo Calendar</title>
+  <title>Taskly</title>
+  <meta name="description" content="Taskly: a calendar for your todos.">
+  <meta name="apple-mobile-web-app-title" content="Taskly">
   <meta name="theme-color" content="#4f46e5">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📅</text></svg>">
   <link rel="stylesheet" href="style.css">
@@ -12,7 +14,10 @@
   <div class="app">
     <section class="calendar">
       <header class="cal-head">
-        <h1 id="month-label"></h1>
+        <div>
+          <p class="brand">✓ Taskly</p>
+          <h1 id="month-label"></h1>
+        </div>
         <div class="nav">
           <button type="button" id="prev" aria-label="Previous month">‹</button>
           <button type="button" id="today">Today</button>

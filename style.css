@@ -77,6 +77,7 @@ input:focus, button:focus-visible { outline: 2px solid var(--accent); outline-of
 
 .cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .cal-head h1 { font-size: 22px; margin: 0; }
+.brand { margin: 0 0 2px; font-size: 13px; font-weight: 700; color: var(--accent); letter-spacing: .02em; }
 .nav { display: flex; gap: 6px; }
 
 .weekdays, .grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }

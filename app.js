@@ -1,4 +1,4 @@
-// Todo Calendar — todos are saved in this browser's localStorage.
+// Taskly — todos are saved in this browser's localStorage.
 const STORE_KEY = "todo-calendar:v1";
 const $ = (id) => document.getElementById(id);
 
