@@ -255,6 +255,16 @@
     </section>
   </main>
 
+  <div class="modal" id="confirm" hidden>
+    <div class="modal-card" role="alertdialog" aria-modal="true" aria-labelledby="confirm-text">
+      <p id="confirm-text"></p>
+      <div class="modal-actions">
+        <button type="button" id="confirm-no">Cancel</button>
+        <button type="button" class="danger-fill" id="confirm-yes">Delete</button>
+      </div>
+    </div>
+  </div>
+
   <div class="toast" id="toast" role="status" aria-live="polite" hidden>
     <span class="toast-icon" aria-hidden="true">🔔</span>
     <span class="toast-text" id="toast-text"></span>

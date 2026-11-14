@@ -165,8 +165,9 @@ if ("serviceWorker" in navigator && location.protocol !== "file:") {
   navigator.serviceWorker.register("sw.js").then((r) => { swReg = r; }).catch(() => {});
 }
 
-function showToast(text) {
+function showToast(text, icon = "🔔") {
   $("toast-text").textContent = text;
+  $("toast").querySelector(".toast-icon").textContent = icon;
   $("toast").hidden = false;
   clearTimeout(showToast.timer);
   showToast.timer = setTimeout(() => { $("toast").hidden = true; }, 12000);
@@ -247,6 +248,30 @@ function renderNotifyStatus() {
     btn.hidden = false;
   }
 }
+
+/* Daydot's own "Are you sure?" box. The browser's built-in confirm() is silently
+   blocked in some apps and home-screen views, which made Delete do nothing. */
+function askConfirm(message, yesLabel = "Delete") {
+  return new Promise((resolve) => {
+    const box = $("confirm");
+    $("confirm-text").textContent = message;
+    $("confirm-yes").textContent = yesLabel;
+    box.hidden = false;
+    const done = (answer) => {
+      box.hidden = true;
+      $("confirm-yes").onclick = $("confirm-no").onclick = box.onclick = null;
+      document.removeEventListener("keydown", onKey, true);
+      resolve(answer);
+    };
+    const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); done(false); } };
+    $("confirm-yes").onclick = () => done(true);
+    $("confirm-no").onclick = () => done(false);
+    box.onclick = (e) => { if (e.target === box) done(false); };
+    document.addEventListener("keydown", onKey, true);
+    setTimeout(() => $("confirm-no").focus(), 30);
+  });
+}
+const notify = (text) => showToast(text, "ℹ️");
 
 /* Full-screen forms get their own history entry, so Cancel, the back gesture or Esc closes them. */
 const OVERLAYS = ["edit-screen", "list-screen", "account-screen"];
@@ -541,7 +566,7 @@ $("photo-input").addEventListener("change", (e) => {
     saveSettings();
     renderProfile();
   };
-  img.onerror = () => alert("That picture couldn't be opened. Try a JPG or PNG.");
+  img.onerror = () => notify("That picture couldn't be opened. Try a JPG or PNG.");
   img.src = URL.createObjectURL(file);
 });
 $("photo-remove").addEventListener("click", () => { delete settings.photo; saveSettings(); renderProfile(); });
@@ -657,11 +682,11 @@ $("list-form").addEventListener("submit", (e) => {
   renderAll();
   closeOverlay();
 });
-$("list-delete").addEventListener("click", () => {
+$("list-delete").addEventListener("click", async () => {
   const l = editingList;
   if (!l || lists.length < 2) return;
   const n = todos.filter((x) => x.listId === l.id).length;
-  if (!confirm(`Delete "${l.name}"${n ? ` and its ${n} todo${n === 1 ? "" : "s"}` : ""}? This can't be undone.`)) return;
+  if (!(await askConfirm(`Delete "${l.name}"${n ? ` and its ${n} todo${n === 1 ? "" : "s"}` : ""}? This can't be undone.`, "Delete list"))) return;
   lists = lists.filter((x) => x.id !== l.id);
   todos = todos.filter((x) => x.listId !== l.id);
   currentList = settings.list = "all";
@@ -693,9 +718,10 @@ $("edit-form").addEventListener("submit", (e) => {
   }
   closeOverlay();
 });
-$("edit-delete").addEventListener("click", () => {
-  if (!editing || !confirm(`Delete "${editing.text}"?`)) return;
-  removeTodo(editing);
+$("edit-delete").addEventListener("click", async () => {
+  const t = editing;
+  if (!t || !(await askConfirm(`Delete "${t.text}"?`, "Delete todo"))) return;
+  removeTodo(t);
   closeOverlay();
 });
 window.addEventListener("popstate", () => {
@@ -734,7 +760,7 @@ $("import").addEventListener("change", async (e) => {
     const data = JSON.parse(await file.text());
     const list = Array.isArray(data) ? data : data.todos;
     if (!Array.isArray(list) || !list.every((x) => x && typeof x.text === "string" && (!x.date || /^\d{4}-\d{2}-\d{2}$/.test(x.date)))) throw new Error();
-    if (!confirm(`Replace your todos with the ${list.length} in this file?`)) return;
+    if (!(await askConfirm(`Replace your todos with the ${list.length} in this file?`, "Replace"))) return;
     if (Array.isArray(data.lists) && data.lists.length && data.lists.every((l) => l && l.id && typeof l.name === "string")) {
       lists = data.lists.map((l) => ({ id: String(l.id), name: l.name }));
     }
@@ -745,13 +771,13 @@ $("import").addEventListener("change", async (e) => {
     saveTodos();
     renderAll();
   } catch {
-    alert("That file isn't a Daydot export.");
+    notify("That file isn't a Daydot export.");
   }
 });
-$("clear-done").addEventListener("click", () => {
+$("clear-done").addEventListener("click", async () => {
   const n = todos.filter((x) => x.done).length;
-  if (!n) { alert("No finished todos to clear."); return; }
-  if (!confirm(`Delete ${n} finished todo${n === 1 ? "" : "s"}? This can't be undone.`)) return;
+  if (!n) { notify("No finished todos to clear."); return; }
+  if (!(await askConfirm(`Delete ${n} finished todo${n === 1 ? "" : "s"}? This can't be undone.`, "Clear"))) return;
   todos = todos.filter((x) => !x.done);
   saveTodos();
   renderAll();
@@ -761,7 +787,7 @@ $("day-back").addEventListener("click", closeDay);
 $("day-prev").addEventListener("click", () => moveDay(-1));
 $("day-next").addEventListener("click", () => moveDay(1));
 document.addEventListener("keydown", (e) => {
-  if (e.key !== "Escape") return;
+  if (e.key !== "Escape" || !$("confirm").hidden) return;
   if (overlayOpen()) closeOverlay();
   else if (!$("day-screen").hidden) closeDay();
 });

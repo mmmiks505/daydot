@@ -172,7 +172,7 @@ $("acct-forgot").addEventListener("click", async () => {
 });
 
 $("acct-logout").addEventListener("click", async () => {
-  if (!confirm("Log out? Your todos stay saved in your account, and are removed from this device until you log in again.")) return;
+  if (!(await askConfirm("Log out? Your todos stay saved in your account, and are removed from this device until you log in again.", "Log out"))) return;
   if (dirty) await upload();
   await signOut(auth);
   window.daydot.clearLocal();
