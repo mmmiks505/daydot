@@ -31,7 +31,7 @@ if (["localhost", "127.0.0.1"].includes(location.hostname) && new URLSearchParam
 
 // Public half of the Web Push key. The private half is a GitHub secret used by the
 // reminder sender (.github/workflows/reminders.yml). Empty = phone reminders are off.
-const VAPID_PUBLIC_KEY = "";
+const VAPID_PUBLIC_KEY = "BHpq-NI610ZmmYEoXodo_s26lg2zo0yLsUaFIrtKnQXcnM_kst7ItOMvIEToxvxaNdVAwh9I0MGISF4ofK2Xfhc";
 
 const $ = (id) => document.getElementById(id);
 let user = null;
