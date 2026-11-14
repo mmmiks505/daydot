@@ -78,10 +78,12 @@ ul { list-style: none; margin: 0; padding: 0; }
 .page-head .muted { margin-bottom: 0; }
 
 /* ---------- calendar ---------- */
-.cal-layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 20px; align-items: start; }
+.cal-layout { display: grid; grid-template-columns: minmax(0, 1fr); }
 .cal-layout[data-mode="day"] { grid-template-columns: minmax(0, 720px); justify-content: center; }
 .cal-layout[data-mode="day"] .weekdays,
-.cal-layout[data-mode="day"] .grid { display: none; }
+.cal-layout[data-mode="day"] .grid,
+.cal-layout:not([data-mode="day"]) .day-panel { display: none; }
+.grid-month .day { min-height: 118px; }
 .cal-layout[data-mode="week"] .weekdays { display: none; }
 
 .cal-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
@@ -91,7 +93,6 @@ ul { list-style: none; margin: 0; padding: 0; }
 .seg button { border: 0; background: none; border-radius: 7px; padding: 5px 12px; color: var(--muted); }
 .seg button[aria-pressed="true"] { background: var(--card); color: var(--text); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.12); }
 .mode-seg { margin-bottom: 12px; }
-.cal-layout[data-mode="day"] .mode-seg { margin-bottom: 0; }
 
 .weekdays, .grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
 .weekdays div { font-size: 12px; color: var(--muted); text-align: center; padding: 4px 0 8px; text-transform: uppercase; letter-spacing: .04em; }
@@ -184,6 +185,23 @@ p.empty.card { padding: 16px; margin: 0; text-align: center; }
 .setting-actions { display: flex; gap: 6px; }
 .settings > .muted { margin: 8px 0 0; }
 
+/* ---------- full-screen day ---------- */
+.day-screen {
+  position: fixed; inset: 0; z-index: 20;
+  background: var(--bg);
+  overflow-y: auto;
+  animation: slide-in .18s ease-out;
+}
+@keyframes slide-in { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .day-screen { animation: none; } }
+.day-screen-inner { max-width: 720px; margin: 0 auto; padding: calc(16px + env(safe-area-inset-top)) 16px 32px; }
+.day-screen-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.back { border: 0; background: none; color: var(--accent); font-weight: 600; padding: 6px 4px; font-size: 16px; }
+.day-screen h1 { font-size: 26px; margin-bottom: 2px; }
+.day-screen .day-panel { display: block !important; }
+.day-screen .todos li { padding: 12px 4px; }
+body.day-open { overflow: hidden; }
+
 /* ---------- bottom menu ---------- */
 .tabbar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
@@ -214,7 +232,6 @@ p.empty.card { padding: 16px; margin: 0; text-align: center; }
 /* ---------- phones ---------- */
 @media (max-width: 860px) {
   .view { padding: 16px; }
-  .cal-layout { grid-template-columns: 1fr; gap: 14px; }
   .grid-month .day { min-height: 56px; padding: 4px; align-items: center; }
   .grid-month .day .chip, .grid-month .day .more { display: none; }
   .grid-month .day .dot { display: block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }

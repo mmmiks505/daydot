@@ -33,20 +33,33 @@
         </div>
         <div class="weekdays" id="weekdays"></div>
         <div class="grid" id="grid"></div>
-      </section>
-
-      <section class="card">
-        <h2 id="day-label"></h2>
-        <p class="muted" id="day-count"></p>
-        <form id="day-form" class="add" autocomplete="off">
-          <input id="day-text" placeholder="Add a todo…" maxlength="120" required aria-label="Todo">
-          <input id="day-time" type="time" aria-label="Time (optional)">
-          <button type="submit" class="primary">Add</button>
-        </form>
-        <ul class="todos" id="day-todos"></ul>
+        <div class="day-panel" id="day-panel">
+          <p class="muted" id="day-count"></p>
+          <form id="day-form" class="add" autocomplete="off">
+            <input id="day-text" placeholder="Add a todo…" maxlength="120" required aria-label="Todo">
+            <input id="day-time" type="time" aria-label="Time (optional)">
+            <button type="submit" class="primary">Add</button>
+          </form>
+          <ul class="todos" id="day-todos"></ul>
+        </div>
       </section>
     </div>
   </main>
+
+  <!-- Full-screen day (opened by tapping a day) -->
+  <section class="day-screen" id="day-screen" hidden aria-labelledby="day-screen-label">
+    <div class="day-screen-inner">
+      <header class="day-screen-head">
+        <button type="button" class="back" id="day-back">‹ Back</button>
+        <div class="nav">
+          <button type="button" id="day-prev" aria-label="Previous day">‹</button>
+          <button type="button" id="day-next" aria-label="Next day">›</button>
+        </div>
+      </header>
+      <h1 id="day-screen-label"></h1>
+      <div id="day-screen-body"></div>
+    </div>
+  </section>
 
   <!-- To do -->
   <main class="view narrow" id="view-todo" data-view="todo" hidden>

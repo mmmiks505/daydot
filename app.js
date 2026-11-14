@@ -115,7 +115,7 @@ function dayCell(k, { other = false, week = false } = {}) {
   if (week && !list.length) cell.append(el("span", "more", "Nothing planned"));
   if (list.length) cell.append(el("span", "dot" + (list.every((t) => t.done) ? " all-done" : "")));
 
-  cell.addEventListener("click", () => selectDay(k));
+  cell.addEventListener("click", () => openDay(k)); // tap a day to see and add its todos
   return cell;
 }
 
@@ -145,16 +145,16 @@ function renderCalendar() {
     $("month-label").textContent = `${fmt(start, { month: "short", day: "numeric" })} – ${fmt(end, sameMonth ? { day: "numeric" } : { month: "short", day: "numeric" })}, ${fromKey(end).getFullYear()}`;
     for (let i = 0; i < 7; i++) grid.append(dayCell(addDays(start, i), { week: true }));
   } else {
-    $("month-label").textContent = fmt(selected, { month: "long", day: "numeric", year: "numeric" });
+    $("month-label").textContent = fmt(selected, { weekday: "long", month: "long", day: "numeric" });
   }
 }
 
 function renderDay() {
-  $("day-label").textContent = (selected === todayKey() ? "Today · " : "") +
-    fmt(selected, { weekday: "long", month: "long", day: "numeric" });
+  $("day-screen-label").textContent = fmt(selected, { weekday: "long", month: "long", day: "numeric" });
   const list = todosOn(selected);
   const left = list.filter((t) => !t.done).length;
-  $("day-count").textContent = list.length ? `${left} of ${list.length} left to do` : "Nothing planned";
+  $("day-count").textContent = (selected === todayKey() ? "Today · " : "") +
+    (list.length ? `${left} of ${list.length} left to do` : "Nothing planned");
   const ul = $("day-todos");
   ul.innerHTML = "";
   if (!list.length) ul.append(el("li", "empty", "No todos for this day yet."));
@@ -167,6 +167,25 @@ function selectDay(k) {
   viewMonth = new Date(d.getFullYear(), d.getMonth(), 1);
   renderCalendar();
   renderDay();
+}
+
+function setMode(mode) {
+  settings.mode = mode;
+  saveSettings();
+}
+
+/* Full-screen day: its own history entry, so Back (button, gesture or browser) closes it. */
+function openDay(k) {
+  history.pushState({ day: true }, "", "#day/" + k);
+  showTab();
+}
+function closeDay() {
+  if (history.state && history.state.day) history.back();
+  else go("calendar");
+}
+function moveDay(n) {
+  history.replaceState({ day: true }, "", "#day/" + addDays(selected, n));
+  showTab();
 }
 
 function step(n) {
@@ -221,7 +240,7 @@ function renderTodoList() {
       const link = el("button", "group-link", friendlyDay(g));
       link.type = "button";
       link.title = "Show on calendar";
-      link.addEventListener("click", () => { selectDay(g); go("calendar"); });
+      link.addEventListener("click", () => openDay(g));
       h.append(link);
       if (friendlyDay(g) !== fmt(g, { weekday: "short", month: "short", day: "numeric" })) {
         h.append(el("span", "group-date", fmt(g, { weekday: "short", month: "short", day: "numeric" })));
@@ -283,7 +302,19 @@ function go(tab) {
   showTab();
 }
 function showTab() {
-  const tab = TABS.includes(location.hash.slice(1)) ? location.hash.slice(1) : "calendar";
+  const hash = location.hash.slice(1);
+  const dayMatch = /^day\/(\d{4}-\d{2}-\d{2})$/.exec(hash);
+  const tab = dayMatch ? "calendar" : TABS.includes(hash) ? hash : "calendar";
+
+  // Full-screen day: move the day's todo list into it; otherwise back into the calendar card.
+  const open = !!dayMatch;
+  if (open) selectDay(dayMatch[1]);
+  const home = open ? $("day-screen-body") : $("view-calendar").querySelector(".calendar");
+  if ($("day-panel").parentElement !== home) home.append($("day-panel"));
+  $("day-screen").hidden = !open;
+  document.body.classList.toggle("day-open", open);
+  if (open) { renderDay(); return; }
+
   document.querySelectorAll(".view").forEach((v) => { v.hidden = v.dataset.view !== tab; });
   document.querySelectorAll(".tab").forEach((a) => {
     if (a.dataset.tab === tab) a.setAttribute("aria-current", "page");
@@ -316,8 +347,7 @@ $("today").addEventListener("click", () => selectDay(todayKey()));
 $("mode-seg").addEventListener("click", (e) => {
   const b = e.target.closest("[data-mode]");
   if (!b) return;
-  settings.mode = b.dataset.mode;
-  saveSettings();
+  setMode(b.dataset.mode);
   selectDay(selected);
 });
 
@@ -392,6 +422,12 @@ $("clear-done").addEventListener("click", () => {
   renderAll();
 });
 
+$("day-back").addEventListener("click", closeDay);
+$("day-prev").addEventListener("click", () => moveDay(-1));
+$("day-next").addEventListener("click", () => moveDay(1));
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !$("day-screen").hidden) closeDay();
+});
 window.addEventListener("hashchange", showTab);
 
 applyTheme();
