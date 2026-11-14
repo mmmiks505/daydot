@@ -113,7 +113,6 @@ function setDone(t, done) {
     (next.subtasks || []).forEach((st) => { st.done = false; });
     t.nextId = next.id;
     todos.push(next);
-    notify(`Next one added for ${friendlyDay(next.date)}.`);
   } else if (!done && t.nextId) {
     // Unticked by mistake: take back the next one, unless it's been ticked too.
     todos = todos.filter((x) => !(x.id === t.nextId && !x.done));
@@ -150,7 +149,11 @@ function todoItem(t, { showList = false, reorder = null } = {}) {
   cb.type = "checkbox";
   cb.checked = t.done;
   cb.setAttribute("aria-label", `Mark "${t.text}" done`);
-  cb.addEventListener("change", () => setDone(t, cb.checked));
+  cb.addEventListener("change", () => {
+    // Repeating todos get a little celebration and slide away; the next one is already waiting.
+    if (cb.checked && t.repeat) swipeAway(li, () => setDone(t, true));
+    else setDone(t, cb.checked);
+  });
 
   const text = el("span", "text");
   text.append(el("span", "title", t.text));
@@ -185,6 +188,20 @@ function todoItem(t, { showList = false, reorder = null } = {}) {
   return li;
 }
 
+/* The ticked-off animation: the checkbox pops, a sparkle flies, the row turns green,
+   slides off to the right, and the gap closes. Then the list updates. */
+function swipeAway(li, then, alreadySwiped = false) {
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) { then(); return; }
+  const row = li.querySelector(".row");
+  li.dataset.swipe = "done";
+  li.classList.add("celebrate", "armed");
+  li.style.height = li.offsetHeight + "px";
+  const pop = alreadySwiped ? 0 : 280;
+  setTimeout(() => { row.style.transform = "translateX(110%)"; row.style.opacity = "0"; }, pop);
+  setTimeout(() => { li.classList.add("closing"); li.style.height = "0px"; }, pop + 300);
+  setTimeout(then, pop + 560);
+}
+
 /* Swipe a row sideways: right ticks it off (or back), left deletes it with Undo. */
 function addSwipe(li, row, t) {
   let x0 = 0, y0 = 0, dx = 0, id = null, tracking = false, sideways = false;
@@ -211,9 +228,10 @@ function addSwipe(li, row, t) {
     if (!tracking) return;
     tracking = false;
     li.classList.remove("swiping", "armed");
-    row.style.transform = "";
+    if (!(sideways && !cancel && dx > 80 && !t.done && t.repeat)) row.style.transform = "";
     if (!sideways || cancel) return;
-    if (dx > 80) setDone(t, !t.done);
+    if (dx > 80 && !t.done && t.repeat) swipeAway(li, () => setDone(t, true), true);
+    else if (dx > 80) setDone(t, !t.done);
     else if (dx < -80) deleteWithUndo(t);
     else delete li.dataset.swipe;
   };
@@ -336,6 +354,7 @@ async function askNotifyPermission() {
   if (!canNotify() || Notification.permission !== "default") return;
   try { await Notification.requestPermission(); } catch { /* older browsers */ }
   renderNotifyStatus();
+  if (window.daydotSync && window.daydotSync.subscribePush) window.daydotSync.subscribePush();
 }
 
 let swReg = null;
@@ -1088,6 +1107,18 @@ window.addEventListener("hashchange", showTab);
 /* For sync.js: read everything to upload, and swap in what comes from the account. */
 window.daydot = {
   snapshot: () => JSON.parse(JSON.stringify({ todos, lists, settings })),
+  // Upcoming reminders, for the online sender that reminds you when Daydot is closed.
+  reminderItems() {
+    const soon = Date.now() - 3600000;
+    return todos
+      .filter((t) => !t.done && remindAt(t) && remindAt(t) > soon)
+      .map((t) => ({
+        id: t.id, at: remindAt(t), title: t.text,
+        body: (t.time ? formatTime(t.time) + " · " : "") + fmt(t.date, { weekday: "short", month: "short", day: "numeric" }),
+      }))
+      .sort((a, b) => a.at - b.at)
+      .slice(0, 200);
+  },
   load(data) {
     if (Array.isArray(data.todos)) todos = data.todos;
     if (Array.isArray(data.lists) && data.lists.length) lists = data.lists;

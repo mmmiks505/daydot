@@ -198,6 +198,23 @@ button:focus-visible, a:focus-visible, .avatar:focus-within { outline: 2px solid
 }
 .todos li.dragging { z-index: 3; box-shadow: 0 6px 18px rgba(0,0,0,.18); border-radius: 12px; }
 .todos li.dragging .row { background: var(--card-high); }
+/* Ticking off a repeating todo */
+.todos li.celebrate .row {
+  background: color-mix(in srgb, #3b8c5a 16%, var(--card));
+  transition: background .2s, transform .32s cubic-bezier(.55, 0, .8, .2), opacity .32s;
+}
+.todos li.celebrate .title { color: var(--done); text-decoration: line-through; }
+.todos li.celebrate input[type="checkbox"] { animation: pop .3s ease-out; }
+.todos li.celebrate .row::after {
+  content: "✨"; position: absolute; left: 22px; top: 50%; font-size: 18px; pointer-events: none;
+  animation: sparkle .55s ease-out forwards;
+}
+.todos li.closing { transition: height .26s ease, border-color .26s; border-top-color: transparent; }
+@keyframes pop { 0% { transform: scale(1); } 45% { transform: scale(1.5); } 100% { transform: scale(1); } }
+@keyframes sparkle {
+  from { transform: translate(0, -50%) scale(.4) rotate(0); opacity: 1; }
+  to { transform: translate(18px, -140%) scale(1.4) rotate(25deg); opacity: 0; }
+}
 .star-btn { flex: none; border: 0; padding: 2px 6px; font-size: 18px; line-height: 1; color: var(--muted); }
 .star-btn.on { color: #e0a100; }
 .star-btn:hover { background: none; color: #e0a100; }

@@ -6,5 +6,15 @@ service cloud.firestore {
     match /users/{uid} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
+
+    // Upcoming reminder times and the person's devices, for sending reminders
+    // while Daydot is closed. The reminder bot (one fixed account) can read them,
+    // and may only update which reminders it has sent and remove dead devices.
+    match /reminders/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+      allow read: if request.auth != null && request.auth.uid == "REMINDER_BOT_UID";
+      allow update: if request.auth != null && request.auth.uid == "REMINDER_BOT_UID"
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["sent", "subs"]);
+    }
   }
 }

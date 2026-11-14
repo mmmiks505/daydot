@@ -7,7 +7,7 @@ import {
   signInWithEmailAndPassword, signOut, sendPasswordResetEmail,
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import {
-  getFirestore, connectFirestoreEmulator, doc, getDoc, setDoc, onSnapshot, serverTimestamp,
+  getFirestore, connectFirestoreEmulator, doc, getDoc, setDoc, onSnapshot, serverTimestamp, deleteField,
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 // Public web settings for the Daydot Firebase project (safe to publish; the
@@ -29,6 +29,10 @@ if (["localhost", "127.0.0.1"].includes(location.hostname) && new URLSearchParam
   connectFirestoreEmulator(db, "127.0.0.1", 8080);
 }
 
+// Public half of the Web Push key. The private half is a GitHub secret used by the
+// reminder sender (.github/workflows/reminders.yml). Empty = phone reminders are off.
+const VAPID_PUBLIC_KEY = "";
+
 const $ = (id) => document.getElementById(id);
 let user = null;
 let ready = false;   // true once the account's data has been loaded
@@ -38,6 +42,37 @@ let unsubscribe = null;
 let mode = "login";
 
 const userDoc = () => doc(db, "users", user.uid);
+const reminderDoc = () => doc(db, "reminders", user.uid);
+
+/* ---------- reminders when Daydot is closed ---------- */
+// This device's push address is saved to the account; a GitHub job checks every
+// few minutes and sends any reminders that are due.
+const subKey = (endpoint) => { let h = 5381; for (const c of endpoint) h = ((h * 33) ^ c.charCodeAt(0)) >>> 0; return "d" + h.toString(36); };
+async function pushSubscription(create) {
+  if (!VAPID_PUBLIC_KEY || !("PushManager" in window) || !("serviceWorker" in navigator)) return null;
+  const reg = await navigator.serviceWorker.ready;
+  let sub = await reg.pushManager.getSubscription();
+  if (!sub && create) {
+    const key = Uint8Array.from(atob(VAPID_PUBLIC_KEY.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+    sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+  }
+  return sub;
+}
+async function subscribePush() {
+  if (!user || !("Notification" in window) || Notification.permission !== "granted") return;
+  try {
+    const sub = await pushSubscription(true);
+    if (sub) await setDoc(reminderDoc(), { subs: { [subKey(sub.endpoint)]: sub.toJSON() } }, { merge: true });
+  } catch { /* push not supported here, e.g. iPhone Safari before adding to home screen */ }
+}
+async function unsubscribePush() {
+  try {
+    const sub = await pushSubscription(false);
+    if (!sub) return;
+    await setDoc(reminderDoc(), { subs: { [subKey(sub.endpoint)]: deleteField() } }, { merge: true });
+    await sub.unsubscribe();
+  } catch { /* ignore */ }
+}
 const setStatus = (text) => { $("sync-status").textContent = text; };
 
 async function upload() {
@@ -45,6 +80,8 @@ async function upload() {
   if (!user || !ready) return;
   try {
     await setDoc(userDoc(), { ...window.daydot.snapshot(), updatedAt: serverTimestamp() });
+    // Reminder times go in a separate small doc that the reminder sender can read.
+    await setDoc(reminderDoc(), { items: window.daydot.reminderItems(), updatedAt: serverTimestamp() }, { merge: true });
     dirty = false;
     setStatus("✓ Saved to your account");
   } catch {
@@ -54,6 +91,7 @@ async function upload() {
 }
 
 window.daydotSync = {
+  subscribePush,
   queue() {
     if (!user || !ready) return;
     dirty = true;
@@ -89,6 +127,7 @@ onAuthStateChanged(auth, async (u) => {
     if (snap.exists()) window.daydot.load(merge(snap.data(), window.daydot.snapshot()));
     ready = true;
     await upload();
+    subscribePush();
     // Live updates: changes made on another device show up here.
     unsubscribe = onSnapshot(userDoc(), (s) => {
       if (!s.exists() || s.metadata.hasPendingWrites || dirty) return;
@@ -174,6 +213,7 @@ $("acct-forgot").addEventListener("click", async () => {
 $("acct-logout").addEventListener("click", async () => {
   if (!(await askConfirm("Log out? Your todos stay saved in your account, and are removed from this device until you log in again.", "Log out"))) return;
   if (dirty) await upload();
+  await unsubscribePush();
   await signOut(auth);
   window.daydot.clearLocal();
 });
