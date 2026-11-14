@@ -6,8 +6,8 @@
   <title>Daydot</title>
   <meta name="description" content="Daydot: a calendar for your todos.">
   <meta name="apple-mobile-web-app-title" content="Daydot">
-  <meta name="theme-color" content="#4f46e5">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%234f46e5'/><circle cx='50' cy='50' r='20' fill='white'/></svg>">
+  <meta name="theme-color" content="#ffffff">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23111111'/><circle cx='50' cy='50' r='20' fill='white'/></svg>">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -34,12 +34,10 @@
         <div class="weekdays" id="weekdays"></div>
         <div class="grid" id="grid"></div>
         <div class="day-panel" id="day-panel">
-          <p class="muted" id="day-count"></p>
-          <form id="day-form" class="add" autocomplete="off">
-            <input id="day-text" placeholder="Add a todo…" maxlength="120" required aria-label="Todo">
-            <input id="day-time" type="time" aria-label="Time (optional)">
-            <button type="submit" class="primary">Add</button>
-          </form>
+          <div class="list-head">
+            <p class="muted" id="day-count"></p>
+            <button type="button" class="add-btn" id="day-add">+ Add todo</button>
+          </div>
           <ul class="todos" id="day-todos"></ul>
         </div>
       </section>
@@ -61,21 +59,44 @@
     </div>
   </section>
 
+  <!-- Add / edit a todo -->
+  <section class="day-screen edit-screen" id="edit-screen" hidden aria-labelledby="edit-title">
+    <div class="day-screen-inner">
+      <header class="day-screen-head">
+        <button type="button" class="back" id="edit-cancel">‹ Cancel</button>
+      </header>
+      <h1 id="edit-title">New todo</h1>
+      <form id="edit-form" class="card edit-form" autocomplete="off">
+        <label class="field">
+          <span>What do you need to do?</span>
+          <input id="edit-text" maxlength="120" required placeholder="e.g. Buy groceries">
+        </label>
+        <div class="field-row">
+          <label class="field">
+            <span>Date</span>
+            <input id="edit-date" type="date" required>
+          </label>
+          <label class="field">
+            <span>Time <em>(optional)</em></span>
+            <input id="edit-time" type="time">
+          </label>
+        </div>
+        <button type="submit" class="primary big">Save</button>
+        <button type="button" class="danger big" id="edit-delete">Delete todo</button>
+      </form>
+    </div>
+  </section>
+
   <!-- To do -->
   <main class="view narrow" id="view-todo" data-view="todo" hidden>
-    <header class="page-head">
-      <p class="brand">● Daydot</p>
-      <h1>To do</h1>
-      <p class="muted" id="todo-summary"></p>
-    </header>
-    <form id="todo-form" class="card add add-wide" autocomplete="off">
-      <input id="todo-text" placeholder="What do you need to do?" maxlength="120" required aria-label="Todo">
-      <div class="add-row">
-        <input id="todo-date" type="date" required aria-label="Date">
-        <input id="todo-time" type="time" aria-label="Time (optional)">
-        <button type="submit" class="primary">Add</button>
+    <header class="page-head list-head">
+      <div>
+        <p class="brand">● Daydot</p>
+        <h1>To do</h1>
+        <p class="muted" id="todo-summary"></p>
       </div>
-    </form>
+      <button type="button" class="add-btn" id="todo-add">+ Add todo</button>
+    </header>
     <div class="filters" role="tablist" aria-label="Show">
       <button type="button" class="filter active" data-filter="open" role="tab" aria-selected="true">To do</button>
       <button type="button" class="filter" data-filter="done" role="tab" aria-selected="false">Done</button>
@@ -91,7 +112,15 @@
       <h1>Profile</h1>
     </header>
     <section class="card profile-top">
-      <div class="avatar" id="avatar" aria-hidden="true"></div>
+      <div class="avatar-wrap">
+        <label class="avatar" id="avatar" title="Change profile picture">
+          <span class="avatar-letter" id="avatar-letter"></span>
+          <img id="avatar-img" alt="Profile picture" hidden>
+          <span class="avatar-cam" aria-hidden="true">📷</span>
+          <input type="file" id="photo-input" accept="image/*" hidden aria-label="Choose profile picture">
+        </label>
+        <button type="button" class="link-btn" id="photo-remove" hidden>Remove</button>
+      </div>
       <div class="profile-name">
         <label for="name-input" class="muted small">Your name</label>
         <input id="name-input" maxlength="40" placeholder="Add your name">
@@ -100,6 +129,10 @@
     <section class="stats" id="stats"></section>
     <section class="card settings">
       <h2>Settings</h2>
+      <div class="setting">
+        <span>Color</span>
+        <div class="swatches" id="color-swatches" role="radiogroup" aria-label="App color"></div>
+      </div>
       <div class="setting">
         <span>Appearance</span>
         <div class="seg" id="theme-seg" role="radiogroup" aria-label="Appearance">

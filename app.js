@@ -38,7 +38,7 @@ function writeJSON(key, value) {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* storage unavailable */ }
 }
 let todos = readJSON(STORE_KEY, []);
-const settings = Object.assign({ name: "", theme: "auto", weekStart: 0, mode: "month" }, readJSON(SETTINGS_KEY, {}));
+const settings = Object.assign({ name: "", theme: "auto", weekStart: 0, mode: "month", color: "mono" }, readJSON(SETTINGS_KEY, {}));
 const saveTodos = () => writeJSON(STORE_KEY, todos);
 const saveSettings = () => writeJSON(SETTINGS_KEY, settings);
 
@@ -78,12 +78,37 @@ function todoItem(t) {
   cb.checked = t.done;
   cb.setAttribute("aria-label", `Mark "${t.text}" done`);
   cb.addEventListener("change", () => setDone(t, cb.checked));
-  const del = el("button", "del", "×");
-  del.type = "button";
-  del.setAttribute("aria-label", `Delete "${t.text}"`);
-  del.addEventListener("click", () => removeTodo(t));
-  li.append(cb, el("span", "text", t.text), el("span", "time", formatTime(t.time)), del);
+  const edit = el("button", "edit-btn", "Edit");
+  edit.type = "button";
+  edit.setAttribute("aria-label", `Edit "${t.text}"`);
+  edit.addEventListener("click", () => openEditor(t));
+  li.append(cb, el("span", "text", t.text), el("span", "time", formatTime(t.time)), edit);
   return li;
+}
+
+/* ---------- add / edit screen ---------- */
+let editing = null; // the todo being edited, or null when adding a new one
+
+function openEditor(todo, date) {
+  editing = todo || null;
+  $("edit-title").textContent = todo ? "Edit todo" : "New todo";
+  $("edit-text").value = todo ? todo.text : "";
+  $("edit-date").value = todo ? todo.date : date || selected;
+  $("edit-time").value = todo ? todo.time : "";
+  $("edit-delete").hidden = !todo;
+  $("edit-screen").hidden = false;
+  document.body.classList.add("day-open");
+  history.pushState({ ...(history.state || {}), edit: true }, "", location.href);
+  if (!todo) setTimeout(() => $("edit-text").focus(), 50);
+}
+function hideEditor() {
+  $("edit-screen").hidden = true;
+  document.body.classList.toggle("day-open", !$("day-screen").hidden);
+  editing = null;
+}
+function closeEditor() {
+  if (history.state && history.state.edit) history.back(); // popstate hides it
+  else hideEditor();
 }
 
 /* ---------- calendar ---------- */
@@ -258,26 +283,30 @@ function renderTodoList() {
 }
 
 /* ---------- profile ---------- */
-function streak() {
-  const doneDays = new Set(todos.filter((x) => x.done && x.doneAt).map((x) => keyOf(new Date(x.doneAt))));
-  let k = todayKey();
-  if (!doneDays.has(k)) k = addDays(k, -1); // today not done yet doesn't break the streak
-  let n = 0;
-  while (doneDays.has(k)) { n++; k = addDays(k, -1); }
-  return n;
-}
+// App colors: [light-mode color, dark-mode color]. "mono" is black in light mode, white in dark mode.
+const COLORS = {
+  mono:   { name: "Black & white", light: "#111111", dark: "#ffffff" },
+  blue:   { name: "Blue",   light: "#2563eb", dark: "#60a5fa" },
+  purple: { name: "Purple", light: "#7c3aed", dark: "#a78bfa" },
+  pink:   { name: "Pink",   light: "#db2777", dark: "#f472b6" },
+  red:    { name: "Red",    light: "#dc2626", dark: "#f87171" },
+  orange: { name: "Orange", light: "#ea580c", dark: "#fb923c" },
+  green:  { name: "Green",  light: "#16a34a", dark: "#4ade80" },
+  teal:   { name: "Teal",   light: "#0d9488", dark: "#2dd4bf" },
+};
 
 function renderProfile() {
   const name = settings.name.trim();
-  $("avatar").textContent = name ? name[0].toUpperCase() : "🙂";
+  $("avatar-letter").textContent = name ? name[0].toUpperCase() : "🙂";
+  $("avatar-letter").hidden = !!settings.photo;
+  $("avatar-img").hidden = !settings.photo;
+  if (settings.photo) $("avatar-img").src = settings.photo;
+  $("photo-remove").hidden = !settings.photo;
   if (document.activeElement !== $("name-input")) $("name-input").value = settings.name;
 
-  const weekAgo = Date.now() - 7 * 864e5;
   const stats = [
     ["To do", todos.filter((x) => !x.done).length],
     ["Done", todos.filter((x) => x.done).length],
-    ["Done this week", todos.filter((x) => x.done && x.doneAt > weekAgo).length],
-    ["Day streak", streak() + " 🔥"],
   ];
   $("stats").innerHTML = "";
   stats.forEach(([label, value]) => {
@@ -286,14 +315,59 @@ function renderProfile() {
     $("stats").append(tile);
   });
 
+  document.querySelectorAll(".swatch").forEach((b) => b.setAttribute("aria-checked", b.dataset.color === settings.color));
   document.querySelectorAll("[data-theme-choice]").forEach((b) => b.setAttribute("aria-pressed", b.dataset.themeChoice === settings.theme));
   document.querySelectorAll("[data-week]").forEach((b) => b.setAttribute("aria-pressed", Number(b.dataset.week) === settings.weekStart));
 }
 
+/* Profile picture: shrink to a 256px square so it fits in browser storage. */
+$("photo-input").addEventListener("change", (e) => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  const img = new Image();
+  img.onload = () => {
+    const size = 256;
+    const side = Math.min(img.width, img.height);
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = size;
+    canvas.getContext("2d").drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, size, size);
+    settings.photo = canvas.toDataURL("image/jpeg", 0.85);
+    URL.revokeObjectURL(img.src);
+    saveSettings();
+    renderProfile();
+  };
+  img.onerror = () => alert("That picture couldn't be opened. Try a JPG or PNG.");
+  img.src = URL.createObjectURL(file);
+});
+$("photo-remove").addEventListener("click", () => { delete settings.photo; saveSettings(); renderProfile(); });
+
+const darkQuery = matchMedia("(prefers-color-scheme: dark)");
 function applyTheme() {
-  if (settings.theme === "auto") delete document.documentElement.dataset.theme;
-  else document.documentElement.dataset.theme = settings.theme;
+  const root = document.documentElement;
+  if (settings.theme === "auto") delete root.dataset.theme;
+  else root.dataset.theme = settings.theme;
+  const dark = settings.theme === "dark" || (settings.theme === "auto" && darkQuery.matches);
+  const c = COLORS[settings.color] || COLORS.mono;
+  const accent = dark ? c.dark : c.light;
+  root.style.setProperty("--accent", accent);
+  // White text on dark accents, near-black text on light ones.
+  root.style.setProperty("--on-accent", dark ? "#111111" : "#ffffff");
+  document.querySelector('meta[name="theme-color"]').content = dark ? "#0d0d0d" : "#ffffff";
 }
+darkQuery.addEventListener("change", applyTheme);
+
+Object.entries(COLORS).forEach(([key, c]) => {
+  const b = el("button", "swatch");
+  b.type = "button";
+  b.dataset.color = key;
+  b.setAttribute("role", "radio");
+  b.setAttribute("aria-label", c.name);
+  b.title = c.name;
+  b.style.background = key === "mono" ? "linear-gradient(135deg, #111 50%, #fff 50%)" : c.light;
+  b.addEventListener("click", () => { settings.color = key; saveSettings(); applyTheme(); renderProfile(); });
+  $("color-swatches").append(b);
+});
 
 /* ---------- tabs ---------- */
 const TABS = ["calendar", "todo", "profile"];
@@ -351,26 +425,31 @@ $("mode-seg").addEventListener("click", (e) => {
   selectDay(selected);
 });
 
-$("day-form").addEventListener("submit", (e) => {
+$("day-add").addEventListener("click", () => openEditor(null, selected));
+$("todo-add").addEventListener("click", () => openEditor(null, todayKey()));
+$("edit-cancel").addEventListener("click", closeEditor);
+$("edit-form").addEventListener("submit", (e) => {
   e.preventDefault();
-  const text = $("day-text").value.trim();
-  if (!text) return;
-  addTodo(text, selected, $("day-time").value);
-  $("day-text").value = "";
-  $("day-time").value = "";
-  $("day-text").focus();
+  const text = $("edit-text").value.trim();
+  const date = $("edit-date").value;
+  if (!text || !date) return;
+  if (editing) {
+    Object.assign(editing, { text, date, time: $("edit-time").value });
+    saveTodos();
+    renderAll();
+  } else {
+    if (filter === "done") filter = "open";
+    addTodo(text, date, $("edit-time").value);
+  }
+  closeEditor();
 });
-
-$("todo-date").value = todayKey();
-$("todo-form").addEventListener("submit", (e) => {
-  e.preventDefault();
-  const text = $("todo-text").value.trim();
-  if (!text || !$("todo-date").value) return;
-  if (filter === "done") filter = "open";
-  addTodo(text, $("todo-date").value, $("todo-time").value);
-  $("todo-text").value = "";
-  $("todo-time").value = "";
-  $("todo-text").focus();
+$("edit-delete").addEventListener("click", () => {
+  if (!editing || !confirm(`Delete "${editing.text}"?`)) return;
+  removeTodo(editing);
+  closeEditor();
+});
+window.addEventListener("popstate", () => {
+  if (!(history.state && history.state.edit) && !$("edit-screen").hidden) hideEditor();
 });
 document.querySelectorAll(".filter").forEach((b) =>
   b.addEventListener("click", () => { filter = b.dataset.filter; renderTodoList(); }));
@@ -426,7 +505,9 @@ $("day-back").addEventListener("click", closeDay);
 $("day-prev").addEventListener("click", () => moveDay(-1));
 $("day-next").addEventListener("click", () => moveDay(1));
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && !$("day-screen").hidden) closeDay();
+  if (e.key !== "Escape") return;
+  if (!$("edit-screen").hidden) closeEditor();
+  else if (!$("day-screen").hidden) closeDay();
 });
 window.addEventListener("hashchange", showTab);
 
