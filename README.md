@@ -1,4 +1,4 @@
-# Taskly
+# Daydot
 
 A month calendar where you write todos on any day and see what is coming up.
 
