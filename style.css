@@ -122,14 +122,14 @@ button:focus-visible, a:focus-visible, .avatar:focus-within { outline: 2px solid
   background: var(--bg);
   animation: splash-out .35s ease 2.65s forwards;
 }
-.splash-logo { width: min(80vw, 360px); height: auto; overflow: visible; }
+.splash-logo { width: min(52vw, 220px); height: auto; overflow: visible; }
 .splash .ltr-d, .splash .ltr { fill: var(--text); }
 .splash-dot { fill: #f4a3bd; animation: dot-drop 1.1s .15s both; transform-box: fill-box; transform-origin: 50% 100%; }
 .word-move { animation: word-left .7s cubic-bezier(.65, 0, .35, 1) 1.35s both; }
 .dot-slide { animation: dot-right .7s cubic-bezier(.65, 0, .35, 1) 1.35s both; }
-.splash .ltr { opacity: 0; animation: ltr-in .3s ease-out calc(1.5s + var(--i) * .07s) forwards; }
+.splash .ltr { opacity: 0; animation: ltr-in .22s ease-out var(--d) forwards; }
 @keyframes word-left { from { transform: translateX(0); } to { transform: translateX(-92.5px); } }
-@keyframes dot-right { from { transform: translate(0, 0); } 50% { transform: translate(92px, -64px); } to { transform: translate(185px, 0); } }
+@keyframes dot-right { from { transform: translateX(0); } to { transform: translateX(185px); } }
 @keyframes ltr-in { to { opacity: 1; } }
 @keyframes dot-drop {
   0%   { transform: translateY(-120px) scale(1, 1); animation-timing-function: cubic-bezier(.55, 0, 1, .45); }
