@@ -55,7 +55,7 @@ let pageToken = "";
 let sentCount = 0;
 
 do {
-  const res = await fetch(`${BASE}/reminders?pageSize=300${pageToken ? "&pageToken=" + pageToken : ""}`, { headers: auth });
+  const res = await fetch(`${BASE}/reminders?pageSize=300${pageToken ? "&pageToken=" + encodeURIComponent(pageToken) : ""}`, { headers: auth });
   const page = await res.json();
   if (!res.ok) throw new Error("Couldn't read reminders: " + JSON.stringify(page.error));
   pageToken = page.nextPageToken || "";
@@ -68,29 +68,36 @@ do {
     // Only keep notes about reminders that still exist.
     const sent = {};
     for (const it of items) { const k = `${it.id}:${it.at}`; if (oldSent[k]) sent[k] = true; }
-    let subsChanged = false;
+    const removedSubs = [];
 
     for (const it of items) {
       const k = `${it.id}:${it.at}`;
       if (sent[k] || it.at > now || now - it.at > LATE_LIMIT) continue;
+      let delivered = false, retryLater = false;
       for (const [key, sub] of Object.entries(subs)) {
+        if (removedSubs.includes(key)) continue;
         try {
           await webpush.sendNotification(sub, JSON.stringify({ title: it.title, body: it.body, tag: it.id }));
           sentCount++;
+          delivered = true;
         } catch (err) {
           // The device unsubscribed or the address expired: forget it.
-          if (err.statusCode === 404 || err.statusCode === 410) { delete subs[key]; subsChanged = true; }
-          else console.log("Push failed:", err.statusCode || err.message);
+          if (err.statusCode === 404 || err.statusCode === 410) removedSubs.push(key);
+          else { retryLater = true; console.log("Push failed:", err.statusCode || err.message); }
         }
       }
-      sent[k] = true;
+      // Only note it as sent if it reached a device (or there was nowhere to send it);
+      // a temporary failure gets another try on the next run.
+      if (delivered || !retryLater) sent[k] = true;
     }
 
-    const changed = subsChanged || JSON.stringify(sent) !== JSON.stringify(oldSent);
+    const changed = removedSubs.length || JSON.stringify(sent) !== JSON.stringify(oldSent);
     if (!changed) continue;
     const fields = { sent: toValue(sent) };
     let mask = "updateMask.fieldPaths=sent";
-    if (subsChanged) { fields.subs = toValue(subs); mask += "&updateMask.fieldPaths=subs"; }
+    // Remove only the dead devices (listed in the mask but not in the fields), so a
+    // device added in the meantime isn't dropped.
+    for (const key of removedSubs) mask += "&updateMask.fieldPaths=" + encodeURIComponent("subs.`" + key + "`");
     const up = await fetch(`https://firestore.googleapis.com/v1/${d.name}?${mask}`, {
       method: "PATCH",
       headers: { ...auth, "Content-Type": "application/json" },

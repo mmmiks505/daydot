@@ -41,7 +41,7 @@ function writeJSON(key, value) {
 // Finished todos clear away by themselves 30 days after you tick them off.
 const KEEP_DONE_DAYS = 30;
 const pruneOld = (list) => list.filter((t) => !(t.done && t.doneAt && t.doneAt < Date.now() - KEEP_DONE_DAYS * 864e5));
-let todos = pruneOld(readJSON(STORE_KEY, []));
+let todos = readJSON(STORE_KEY, []);
 const settings = Object.assign({ name: "", theme: "auto", weekStart: 0, mode: "month", color: "white" }, readJSON(SETTINGS_KEY, {}));
 // Named lists, like Homework or Shopping. Every todo belongs to one; older todos go in Personal.
 let lists = readJSON(LISTS_KEY, null) || [{ id: "personal", name: "Personal" }];
@@ -53,7 +53,30 @@ function fixListIds() {
 fixListIds();
 // When logged in, sync.js uploads changes to the account a moment after each save.
 const queueSync = () => { if (window.daydotSync) window.daydotSync.queue(); };
-const saveLists = () => { writeJSON(LISTS_KEY, lists); queueSync(); };
+
+/* Syncing between devices works item by item: every todo and list remembers when it was
+   last changed (u), and deleted ones leave a delete marker with the time. When two copies
+   are combined, the newer version of each item wins and deleted items stay deleted. */
+const DELETED_KEY = "daydot:deleted";
+let deleted = readJSON(DELETED_KEY, {});
+const forgetOldMarkers = () => { const cut = Date.now() - 90 * 864e5; for (const k in deleted) if (deleted[k] < cut) delete deleted[k]; };
+const sameAsSaved = (x) => { const { u, ...rest } = x; return JSON.stringify(rest); };
+const savedTodos = new Map();
+const savedLists = new Map();
+function baseline(arr, map) { map.clear(); arr.forEach((x) => map.set(x.id, sameAsSaved(x))); }
+// Stamp what changed since the last save, and mark what disappeared as deleted.
+function stamp(arr, map) {
+  const now = Date.now();
+  const ids = new Set();
+  arr.forEach((x) => {
+    ids.add(x.id);
+    const j = sameAsSaved(x);
+    if (map.get(x.id) !== j) { x.u = now; map.set(x.id, j); delete deleted[x.id]; }
+  });
+  for (const id of [...map.keys()]) if (!ids.has(id)) { deleted[id] = now; map.delete(id); }
+  forgetOldMarkers();
+}
+const saveLists = () => { stamp(lists, savedLists); writeJSON(LISTS_KEY, lists); writeJSON(DELETED_KEY, deleted); queueSync(); };
 const listOf = (id) => lists.find((l) => l.id === id) || lists[0];
 const listName = (id) => { const l = listOf(id); return (l.emoji ? l.emoji + " " : "") + l.name; };
 // Pastel colors a list can have; its todos use it on the calendar and in tags.
@@ -63,8 +86,42 @@ function tintWithList(node, listId) {
   if (c) { node.classList.add("lc"); node.style.setProperty("--lc", c); }
 }
 const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-const saveTodos = () => { writeJSON(STORE_KEY, todos); queueSync(); };
-const saveSettings = () => { writeJSON(SETTINGS_KEY, settings); queueSync(); };
+const saveTodos = () => { stamp(todos, savedTodos); writeJSON(STORE_KEY, todos); writeJSON(DELETED_KEY, deleted); queueSync(); };
+const saveSettings = () => { settings.u = Date.now(); writeJSON(SETTINGS_KEY, settings); queueSync(); };
+baseline(todos, savedTodos);
+baseline(lists, savedLists);
+if (pruneOld(todos).length !== todos.length) { todos = pruneOld(todos); saveTodos(); }
+
+// Combine two copies (account and this device): newest version of each item wins,
+// deleted items stay deleted. When both are equally new, the first copy (a) wins.
+function mergeData(a, b) {
+  const del = { ...(a.deleted || {}) };
+  for (const [k, v] of Object.entries(b.deleted || {})) del[k] = Math.max(del[k] || 0, v);
+  const pick = (x, y) => {
+    const m = new Map();
+    for (const it of [...(x || []), ...(y || [])]) {
+      const cur = m.get(it.id);
+      if (!cur || (it.u || 0) > (cur.u || 0)) m.set(it.id, it);
+    }
+    return [...m.values()].filter((it) => !(del[it.id] && del[it.id] >= (it.u || 0)));
+  };
+  const sa = a.settings, sb = b.settings;
+  return {
+    todos: pick(a.todos, b.todos),
+    lists: pick(a.lists, b.lists),
+    settings: !sa ? sb : !sb ? sa : (sb.u || 0) > (sa.u || 0) ? sb : sa,
+    deleted: del,
+  };
+}
+// Compares two copies ignoring key order, so syncing knows when nothing changed.
+function stableJSON(x) {
+  if (Array.isArray(x)) return "[" + x.map(stableJSON).join(",") + "]";
+  if (x && typeof x === "object") return "{" + Object.keys(x).sort().filter((k) => x[k] !== undefined).map((k) => JSON.stringify(k) + ":" + stableJSON(x[k])).join(",") + "}";
+  return JSON.stringify(x === undefined ? null : x);
+}
+const byIdSorted = (arr) => [...(arr || [])].sort((p, q) => (p.id < q.id ? -1 : p.id > q.id ? 1 : 0));
+const sameData = (a, b) => stableJSON({ t: byIdSorted(a.todos), l: byIdSorted(a.lists), s: a.settings || null, d: a.deleted || {} })
+  === stableJSON({ t: byIdSorted(b.todos), l: byIdSorted(b.lists), s: b.settings || null, d: b.deleted || {} });
 
 /* ---------- state ---------- */
 let selected = todayKey();
@@ -101,7 +158,9 @@ function addTodo(text, date, time, listId) {
   saveTodos();
   renderAll();
 }
+const current = (t) => todos.find((x) => x.id === t.id) || t; // the live copy after a sync update
 function setDone(t, done) {
+  t = current(t);
   const wasDue = !t.done && t.date && t.date <= todayKey();
   t.done = done;
   t.doneAt = done ? Date.now() : undefined;
@@ -238,7 +297,7 @@ function addSwipe(li, row, t) {
       li.dataset.held = "1";
       buzz(20);
       li.classList.add("starring");
-      setTimeout(() => { t.star = !t.star; saveTodos(); renderAll(); }, 220);
+      setTimeout(() => { const c = current(t); c.star = !c.star; saveTodos(); renderAll(); }, 220);
     }, 520);
   });
   row.addEventListener("contextmenu", (e) => { if (li.dataset.held || tracking) e.preventDefault(); });
@@ -1168,6 +1227,8 @@ $("list-form").addEventListener("submit", (e) => {
   if (!name) return;
   const emoji = $("list-emoji").value.trim();
   if (editingList) {
+    const live = lists.find((x) => x.id === editingList.id);
+    if (!live) lists.push(editingList); else editingList = live;
     Object.assign(editingList, { name, emoji, color: listColorChoice });
   } else {
     const l = { id: newId(), name, emoji, color: listColorChoice };
@@ -1203,9 +1264,13 @@ $("edit-form").addEventListener("submit", (e) => {
   let finalDate = date;
   if (repeat && !finalDate) finalDate = todayKey();
   if (!text) return;
-  if (remind != null && !date) { setMore(true); updateRemindHint(); showMiniCal(true); return; }
+  if (remind != null && !finalDate) { setMore(true); updateRemindHint(); showMiniCal(true); return; }
   if (remind != null) askNotifyPermission();
   if (editing) {
+    // Use the live copy (a sync from another device may have replaced it); if it was
+    // deleted elsewhere meanwhile, saving brings it back.
+    const live = todos.find((x) => x.id === editing.id);
+    if (!live) todos.push(editing); else editing = live;
     if (editing.repeat !== repeat || editing.date !== finalDate) delete editing.repeatDay;
     Object.assign(editing, { text, date: finalDate, time: $("edit-time").value, listId, remind, notes, repeat, subtasks, star: $("edit-star").checked });
     saveTodos();
@@ -1263,7 +1328,7 @@ $("export").addEventListener("click", () => {
   a.href = URL.createObjectURL(blob);
   a.download = `daydot-${todayKey()}.json`;
   a.click();
-  URL.revokeObjectURL(a.href);
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 });
 $("import").addEventListener("change", async (e) => {
   const file = e.target.files[0];
@@ -1272,7 +1337,13 @@ $("import").addEventListener("change", async (e) => {
   try {
     const data = JSON.parse(await file.text());
     const list = Array.isArray(data) ? data : data.todos;
-    if (!Array.isArray(list) || !list.every((x) => x && typeof x.text === "string" && (!x.date || /^\d{4}-\d{2}-\d{2}$/.test(x.date)))) throw new Error();
+    const okTodo = (x) => x && typeof x.text === "string" && (!x.date || (typeof x.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(x.date)))
+      && (!x.time || (typeof x.time === "string" && /^\d{2}:\d{2}$/.test(x.time)))
+      && (x.remind == null || [0, 10, 30, 60, 1440].includes(x.remind))
+      && (!x.repeat || x.repeat in REPEAT_LABELS)
+      && (x.notes == null || typeof x.notes === "string")
+      && (x.subtasks == null || (Array.isArray(x.subtasks) && x.subtasks.every((st) => st && typeof st.text === "string")));
+    if (!Array.isArray(list) || !list.every(okTodo)) throw new Error();
     if (!(await askConfirm(`Replace your todos with the ${list.length} in this file?`, "Replace"))) return;
     if (Array.isArray(data.lists) && data.lists.length && data.lists.every((l) => l && l.id && typeof l.name === "string")) {
       lists = data.lists.map((l) => ({ id: String(l.id), name: l.name, emoji: l.emoji || "", color: l.color || "" }));
@@ -1308,7 +1379,9 @@ window.addEventListener("hashchange", showTab);
 
 /* For sync.js: read everything to upload, and swap in what comes from the account. */
 window.daydot = {
-  snapshot: () => JSON.parse(JSON.stringify({ todos, lists, settings })),
+  snapshot: () => JSON.parse(JSON.stringify({ todos, lists, settings, deleted })),
+  merge: mergeData,
+  same: sameData,
   // Upcoming reminders, for the online sender that reminds you when Daydot is closed.
   reminderItems() {
     const soon = Date.now() - 3600000;
@@ -1322,26 +1395,34 @@ window.daydot = {
       .slice(0, 200);
   },
   load(data) {
-    if (Array.isArray(data.todos)) todos = pruneOld(data.todos);
+    if (Array.isArray(data.todos)) todos = data.todos;
     if (Array.isArray(data.lists) && data.lists.length) lists = data.lists;
+    if (data.deleted && typeof data.deleted === "object") deleted = data.deleted;
     if (data.settings && typeof data.settings === "object") {
       Object.keys(settings).forEach((k) => { if (!(k in data.settings)) delete settings[k]; });
       Object.assign(settings, { name: "", theme: "auto", weekStart: 0, mode: "month", color: "white" }, data.settings);
     }
     fixListIds();
+    baseline(todos, savedTodos);
+    baseline(lists, savedLists);
+    if (pruneOld(todos).length !== todos.length) { todos = pruneOld(todos); stamp(todos, savedTodos); }
     if (currentList !== "all" && !lists.some((l) => l.id === currentList)) currentList = "all";
-    writeJSON(STORE_KEY, todos); writeJSON(LISTS_KEY, lists); writeJSON(SETTINGS_KEY, settings);
+    writeJSON(STORE_KEY, todos); writeJSON(LISTS_KEY, lists); writeJSON(SETTINGS_KEY, settings); writeJSON(DELETED_KEY, deleted);
     applyTheme();
     renderAll();
   },
   clearLocal() {
-    try { [STORE_KEY, LISTS_KEY, SETTINGS_KEY].forEach((k) => localStorage.removeItem(k)); } catch { /* ignore */ }
+    try { [STORE_KEY, LISTS_KEY, SETTINGS_KEY, DELETED_KEY].forEach((k) => localStorage.removeItem(k)); } catch { /* ignore */ }
     location.reload();
   },
 };
 
 // Remove the opening animation once it has played.
 setTimeout(() => { const sp = $("splash"); if (sp) sp.remove(); }, 3100);
+
+// After a reload no form is open, so forget a leftover "form open" history marker
+// (otherwise the next Cancel would need two taps).
+if (history.state && history.state.overlay) history.replaceState({ ...history.state, overlay: false }, "", location.href);
 
 applyTheme();
 renderAll();

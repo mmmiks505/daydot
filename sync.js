@@ -46,7 +46,8 @@ const $ = (id) => document.getElementById(id);
 let user = null;
 let ready = false;   // true once the account's data has been loaded
 let dirty = false;   // local changes not uploaded yet
-let offlineEdits = false; // changes made while logged in but before the account could load
+let rev = 0;         // goes up on every local change, so a save only clears "dirty" if nothing changed meanwhile
+let loading = false;
 let timer = null;
 let unsubscribe = null;
 let mode = "login";
@@ -85,41 +86,44 @@ async function unsubscribePush() {
 }
 const setStatus = (text) => { $("sync-status").textContent = text; };
 
+const OFFLINE_NOTE = "Offline · saved on this phone, will sync when you're back online";
 async function upload() {
   clearTimeout(timer);
-  if (!user || !ready) return;
+  if (!user || !ready) return false;
+  const startRev = rev;
   try {
     await setDoc(userDoc(), { ...window.daydot.snapshot(), updatedAt: serverTimestamp() });
     // Reminder times go in a separate small doc that the reminder sender can read.
     await setDoc(reminderDoc(), { items: window.daydot.reminderItems(), updatedAt: serverTimestamp() }, { merge: true });
-    dirty = false;
-    setStatus("✓ Saved to your account");
+    if (rev === startRev) { dirty = false; setStatus("✓ Saved to your account"); }
+    return true;
   } catch {
-    setStatus(navigator.onLine ? "Couldn't save. Trying again soon…" : "Offline · saved on this phone, will sync when you're back online");
+    setStatus(navigator.onLine ? "Couldn't save. Trying again soon…" : OFFLINE_NOTE);
     timer = setTimeout(upload, 15000);
+    return false;
   }
 }
 
 window.daydotSync = {
   subscribePush,
   queue() {
-    if (user && !ready) { offlineEdits = true; setStatus("Offline · saved on this phone, will sync when you're back online"); return; }
-    if (!user || !ready) return;
+    if (!user) return;
     dirty = true;
-    setStatus(navigator.onLine ? "Saving…" : "Offline · saved on this phone, will sync when you're back online");
+    rev++;
+    if (!ready) { setStatus(navigator.onLine ? "Not synced yet…" : OFFLINE_NOTE); return; } // combined when the account loads
+    setStatus(navigator.onLine ? "Saving…" : OFFLINE_NOTE);
     clearTimeout(timer);
     timer = setTimeout(upload, 800);
   },
 };
 
-// The first time you log in on a device, keep what's already here too.
-function merge(cloud, local) {
-  const byId = (arr) => new Map((arr || []).map((x) => [x.id, x]));
-  const todos = byId(local.todos);
-  byId(cloud.todos).forEach((v, k) => todos.set(k, v));
-  const lists = byId(local.lists);
-  byId(cloud.lists).forEach((v, k) => lists.set(k, v));
-  return { todos: [...todos.values()], lists: [...lists.values()], settings: cloud.settings || local.settings };
+// Combine the account's copy with this device's, item by item (see mergeData in app.js).
+// Puts the result on screen if it's different, and saves it back if the account is behind.
+function combine(cloud) {
+  const local = window.daydot.snapshot();
+  const merged = window.daydot.merge(cloud, local);
+  if (!window.daydot.same(merged, local)) window.daydot.load(merged);
+  return !window.daydot.same(merged, cloud);
 }
 
 onAuthStateChanged(auth, async (u) => {
@@ -137,33 +141,35 @@ onAuthStateChanged(auth, async (u) => {
   loadAccount(u);
 });
 
-// Get the account's todos and start live updates. If there's no internet, keep using
-// what's on this device and try again as soon as the connection comes back.
+// Get the account's todos and start live updates. If it can't be reached, keep using
+// what's on this device and keep trying (when back online, on return to the app, and
+// every so often).
 async function loadAccount(u) {
-  if (user !== u || ready) return;
+  if (user !== u || ready || loading) return;
+  loading = true;
   setStatus("Loading your todos…");
   try {
     const snap = await getDoc(userDoc());
     if (user !== u) return;
-    // Normally combine the account with this device. If you changed things here while
-    // offline, this device has the newest copy, so it wins.
-    if (snap.exists() && !offlineEdits) window.daydot.load(merge(snap.data(), window.daydot.snapshot()));
-    offlineEdits = false;
+    if (snap.exists()) combine(snap.data());
     ready = true;
     await upload();
     subscribePush();
-    // Live updates: changes made on another device show up here.
+    // Live updates: changes made on another device are combined in as they arrive.
     unsubscribe = onSnapshot(userDoc(), (s) => {
-      if (!s.exists() || s.metadata.hasPendingWrites || dirty) return;
-      window.daydot.load(s.data());
+      if (!s.exists() || s.metadata.hasPendingWrites) return;
+      if (combine(s.data())) window.daydotSync.queue();
     });
   } catch {
-    setStatus(navigator.onLine
-      ? "Couldn't reach your account. Your todos are still saved on this device."
-      : "Offline · your todos are saved on this phone and will sync when you're back online");
-    window.addEventListener("online", () => loadAccount(u), { once: true });
+    setStatus(navigator.onLine ? "Couldn't reach your account. Your todos are still saved on this device." : OFFLINE_NOTE);
+    const retry = () => loadAccount(u);
+    window.addEventListener("online", retry, { once: true });
+    setTimeout(retry, 20000);
+  } finally {
+    loading = false;
   }
 }
+document.addEventListener("visibilitychange", () => { if (!document.hidden && user && !ready) loadAccount(user); });
 
 // Back online: send anything saved while offline.
 window.addEventListener("online", () => { if (dirty) upload(); });
@@ -255,7 +261,11 @@ $("acct-forgot").addEventListener("click", async () => {
 
 $("acct-logout").addEventListener("click", async () => {
   if (!(await askConfirm("Log out? Your todos stay saved in your account, and are removed from this device until you log in again.", "Log out"))) return;
-  if (dirty) await upload();
+  // Make sure nothing is lost: send unsaved changes first, and ask if that's not possible.
+  if (dirty) {
+    const ok = ready && (await Promise.race([upload(), new Promise((r) => setTimeout(() => r(false), 8000))]));
+    if ((!ok || dirty) && !(await askConfirm("Some changes from this device haven't reached your account yet (you might be offline). If you log out now, they'll be lost. Log out anyway?", "Log out anyway"))) return;
+  }
   await unsubscribePush();
   await signOut(auth);
   window.daydot.clearLocal();

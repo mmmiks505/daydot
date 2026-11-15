@@ -1,6 +1,6 @@
 // Daydot service worker: keeps a copy of the app so it opens with no internet,
 // shows reminder notifications on phones, and opens the app when one is tapped.
-const CACHE = "daydot-v1";
+const CACHE = "daydot-v2";
 const APP_FILES = [
   "./", "index.html", "style.css", "app.js", "sync.js", "manifest.json",
   "icon.svg", "icon-192.png", "icon-512.png", "apple-touch-icon.png",
@@ -11,7 +11,8 @@ self.addEventListener("install", (e) => {
 });
 self.addEventListener("activate", (e) => {
   e.waitUntil((async () => {
-    for (const key of await caches.keys()) if (key !== CACHE) await caches.delete(key);
+    // Only Daydot's own old caches (other projects can share this web address).
+    for (const key of await caches.keys()) if (key.startsWith("daydot-") && key !== CACHE) await caches.delete(key);
     await self.clients.claim();
   })());
 });
@@ -53,9 +54,16 @@ async function cacheFirst(req) {
 self.addEventListener("notificationclick", (e) => {
   e.notification.close();
   e.waitUntil((async () => {
-    const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-    if (wins.length) return wins[0].focus();
-    return self.clients.openWindow("./#todo");
+    const scope = self.registration.scope;
+    const wins = (await self.clients.matchAll({ type: "window", includeUncontrolled: true }))
+      .filter((w) => w.url.startsWith(scope)); // only Daydot's own windows
+    const target = new URL("./#todo", scope).href;
+    if (wins.length) {
+      const w = await wins[0].focus();
+      try { await w.navigate(target); } catch { /* some browsers don't allow this */ }
+      return w;
+    }
+    return self.clients.openWindow(target);
   })());
 });
 
