@@ -145,7 +145,7 @@ function deleteWithUndo(t) {
 
 /* A todo row: checkbox, text with a small details line, star and Edit.
    Swipe right to tick it off, swipe left to delete. */
-function todoItem(t, { showList = false, reorder = null } = {}) {
+function todoItem(t, { showList = false, reorder = null, simple = false } = {}) {
   const li = el("li", t.done ? "done" : "");
   li.dataset.id = t.id;
   const row = el("div", "row");
@@ -178,17 +178,17 @@ function todoItem(t, { showList = false, reorder = null } = {}) {
   if (remindAt(t) && !t.done) bits.push("🔔");
   if (t.subtasks && t.subtasks.length) bits.push(`☑ ${t.subtasks.filter((x) => x.done).length}/${t.subtasks.length}`);
   if (t.notes) bits.push(t.notes.split("\n")[0]);
-  if (bits.length) text.append(el("span", "meta", bits.join(" · ")));
+  if (bits.length && !simple) text.append(el("span", "meta", bits.join(" · ")));
   text.addEventListener("click", () => { if (!li.dataset.held) openEditor(t); });
   text.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openEditor(t); } });
   row.append(cb, text);
 
-  if (showList) {
+  if (showList && !simple) {
     const tag = el("span", "tag", listName(t.listId));
     tintWithList(tag, t.listId);
     row.append(tag);
   }
-  row.append(el("span", "time", formatTime(t.time)));
+  row.append(el("span", "time", simple ? "" : formatTime(t.time)));
   if (t.star) {
     const star = el("span", "star-mark", "★");
     star.title = "Starred (press and hold the todo to unstar)";
@@ -862,6 +862,10 @@ function renderTodoList() {
     ? `${open.length} to do${overdue ? ` · ${overdue} overdue` : ""}`
     : "All caught up!";
   if (q) { open = open.filter((x) => matches(x, q)); done = done.filter((x) => matches(x, q)); }
+  const simple = settings.todoView === "simple";
+  document.querySelectorAll("[data-todo-view]").forEach((b) => b.setAttribute("aria-pressed", b.dataset.todoView === (simple ? "simple" : "detailed")));
+  $("todo-add").hidden = simple;
+  if (simple) { renderSimpleList(open, q); renderDoneSection(done, q, all && lists.length > 1); return; }
 
   // Dated todos first (soonest first), then ones with no date.
   open.sort((a, b) => (!a.date - !b.date) || a.date.localeCompare(b.date) || rank(a, b));
@@ -908,6 +912,40 @@ function renderTodoList() {
     wrap.append(sec);
   });
 
+  renderDoneSection(done, q, showList);
+}
+
+/* Simple view: every open todo in one plain checklist, no dates or details,
+   with a line at the bottom to add one quickly. */
+let focusQuickAdd = false;
+function renderSimpleList(open, q) {
+  open.sort(rank);
+  const wrap = $("todo-groups");
+  wrap.innerHTML = "";
+  const card = el("section", "card simple-list");
+  const ul = el("ul", "todos");
+  open.forEach((x) => ul.append(todoItem(x, { simple: true, reorder: !q && open.length > 1 ? "simple" : null })));
+  const form = el("form", "quick-add");
+  form.autocomplete = "off";
+  const input = el("input");
+  input.placeholder = q ? "Clear the search to add" : "Add a todo";
+  input.maxLength = 120;
+  input.disabled = !!q;
+  input.setAttribute("aria-label", "Add a todo");
+  form.append(el("span", "plus", "+"), input);
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const text = input.value.trim();
+    if (!text) return;
+    focusQuickAdd = true;
+    addTodo(text, "", "", currentList !== "all" ? currentList : lists[0].id);
+  });
+  card.append(ul, form);
+  wrap.append(card);
+  if (focusQuickAdd) { focusQuickAdd = false; setTimeout(() => input.focus(), 0); }
+}
+
+function renderDoneSection(done, q, showList) {
   // Finished todos, folded away until you want them.
   const dw = $("done-wrap");
   dw.innerHTML = "";
@@ -923,7 +961,7 @@ function renderTodoList() {
   sec.append(btn);
   if (expanded) {
     const ul = el("ul", "todos");
-    done.slice(0, 100).forEach((x) => ul.append(todoItem(x, { showList })));
+    done.slice(0, 100).forEach((x) => ul.append(todoItem(x, { showList, simple: settings.todoView === "simple" })));
     sec.append(ul);
   }
   dw.append(sec);
@@ -1188,6 +1226,11 @@ window.addEventListener("popstate", () => {
   if (!(history.state && history.state.overlay) && overlayOpen()) hideOverlays();
 });
 $("todo-search").addEventListener("input", renderTodoList);
+document.querySelectorAll("[data-todo-view]").forEach((b) => b.addEventListener("click", () => {
+  settings.todoView = b.dataset.todoView;
+  saveSettings();
+  renderTodoList();
+}));
 
 $("name-input").addEventListener("input", (e) => { settings.name = e.target.value; saveSettings(); renderProfile(); });
 $("theme-seg").addEventListener("click", (e) => {

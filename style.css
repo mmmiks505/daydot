@@ -284,6 +284,17 @@ p.empty.card { padding: 20px; margin: 0; text-align: center; }
 .day-panel .list-head { margin-bottom: 8px; }
 
 /* ---------- to do page ---------- */
+.view-seg { position: absolute; right: 16px; top: calc(env(safe-area-inset-top) + 16px); }
+.view-seg button { padding: 5px 10px; display: grid; place-items: center; }
+.view-seg svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.view-seg button[aria-pressed="true"] svg { stroke-width: 2.4; }
+/* Simple view: one plain checklist, like a notes app */
+.simple-list { padding: 6px 18px 10px; }
+.quick-add { display: flex; align-items: center; gap: 12px; padding: 10px 4px 4px; border-top: 1px solid color-mix(in srgb, var(--line) 55%, transparent); }
+.todos:empty + .quick-add { border-top: 0; }
+.quick-add .plus { width: 20px; text-align: center; color: var(--muted); font-size: 20px; line-height: 1; flex: none; }
+.quick-add input { flex: 1; background: transparent; padding: 8px 0; font-size: 16px; border-radius: 0; }
+.quick-add input:focus { border-bottom-color: transparent; }
 .done-group { padding: 6px 18px; }
 .done-toggle {
   width: 100%; justify-content: space-between; border: 0; padding: 10px 0;
