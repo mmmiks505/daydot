@@ -132,6 +132,7 @@ onAuthStateChanged(auth, async (u) => {
   if (unsubscribe) { unsubscribe(); unsubscribe = null; }
   $("account-card").hidden = false;
   $("acct-in").hidden = !u;
+  $("storage-note").hidden = !!u; // logged in: everything is saved to the account
   if (!u) { showLoggedOut(); return; }
   $("acct-out").hidden = true;
   $("acct-back").hidden = true;
