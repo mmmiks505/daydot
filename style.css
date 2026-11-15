@@ -199,6 +199,10 @@ button:focus-visible, a:focus-visible, .avatar:focus-within { outline: 2px solid
 }
 .day:hover { background: color-mix(in srgb, var(--pastel) 30%, var(--bg)); }
 .day.other { opacity: .45; }
+/* In dark mode the day boxes sit a little lighter than their card, not darker. */
+:root.dark .day { background: var(--card-high); }
+:root.dark .day:hover { background: color-mix(in srgb, #ffffff 13%, var(--bg)); }
+:root.dark .day.selected { background: var(--accent-soft); }
 .day.selected { background: var(--accent-soft); }
 .day-head { display: flex; align-items: center; gap: 6px; }
 .day .num { font-size: 13px; font-weight: 700; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 50%; flex: none; }
@@ -284,7 +288,15 @@ p.empty.card { padding: 20px; margin: 0; text-align: center; }
 .day-panel .list-head { margin-bottom: 8px; }
 
 /* ---------- to do page ---------- */
-.view-seg { position: absolute; right: 16px; top: calc(env(safe-area-inset-top) + 16px); }
+.topbar-right { position: absolute; right: 16px; top: calc(env(safe-area-inset-top) + 14px); display: flex; align-items: center; gap: 4px; }
+.search-btn svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.search-btn[aria-expanded="true"] { background: var(--accent-soft); }
+.search-close { border: 0; padding: 4px 10px; color: var(--muted); font-size: 14px; }
+.search-close:hover { background: none; color: var(--text); }
+.search:not([hidden]) { animation: mini-in .18s ease-out; }
+.done-note { margin: 0 0 8px; font-size: 12px; color: var(--muted); }
+.day-panel .quick-add { margin-top: 2px; }
+#day-count { margin-bottom: 4px; }
 .view-seg button { padding: 5px 10px; display: grid; place-items: center; }
 .view-seg svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
 .view-seg button[aria-pressed="true"] svg { stroke-width: 2.4; }

@@ -46,6 +46,7 @@ const $ = (id) => document.getElementById(id);
 let user = null;
 let ready = false;   // true once the account's data has been loaded
 let dirty = false;   // local changes not uploaded yet
+let offlineEdits = false; // changes made while logged in but before the account could load
 let timer = null;
 let unsubscribe = null;
 let mode = "login";
@@ -94,7 +95,7 @@ async function upload() {
     dirty = false;
     setStatus("✓ Saved to your account");
   } catch {
-    setStatus("Couldn't save. Trying again soon…");
+    setStatus(navigator.onLine ? "Couldn't save. Trying again soon…" : "Offline · saved on this phone, will sync when you're back online");
     timer = setTimeout(upload, 15000);
   }
 }
@@ -102,9 +103,10 @@ async function upload() {
 window.daydotSync = {
   subscribePush,
   queue() {
+    if (user && !ready) { offlineEdits = true; setStatus("Offline · saved on this phone, will sync when you're back online"); return; }
     if (!user || !ready) return;
     dirty = true;
-    setStatus("Saving…");
+    setStatus(navigator.onLine ? "Saving…" : "Offline · saved on this phone, will sync when you're back online");
     clearTimeout(timer);
     timer = setTimeout(upload, 800);
   },
@@ -132,10 +134,21 @@ onAuthStateChanged(auth, async (u) => {
   rememberEmail(u.email);
 
   $("acct-email").textContent = u.email;
+  loadAccount(u);
+});
+
+// Get the account's todos and start live updates. If there's no internet, keep using
+// what's on this device and try again as soon as the connection comes back.
+async function loadAccount(u) {
+  if (user !== u || ready) return;
   setStatus("Loading your todos…");
   try {
     const snap = await getDoc(userDoc());
-    if (snap.exists()) window.daydot.load(merge(snap.data(), window.daydot.snapshot()));
+    if (user !== u) return;
+    // Normally combine the account with this device. If you changed things here while
+    // offline, this device has the newest copy, so it wins.
+    if (snap.exists() && !offlineEdits) window.daydot.load(merge(snap.data(), window.daydot.snapshot()));
+    offlineEdits = false;
     ready = true;
     await upload();
     subscribePush();
@@ -145,9 +158,15 @@ onAuthStateChanged(auth, async (u) => {
       window.daydot.load(s.data());
     });
   } catch {
-    setStatus("Couldn't reach your account. Your todos are still saved on this device.");
+    setStatus(navigator.onLine
+      ? "Couldn't reach your account. Your todos are still saved on this device."
+      : "Offline · your todos are saved on this phone and will sync when you're back online");
+    window.addEventListener("online", () => loadAccount(u), { once: true });
   }
-});
+}
+
+// Back online: send anything saved while offline.
+window.addEventListener("online", () => { if (dirty) upload(); });
 
 /* ---------- log in / create account screen ---------- */
 function setMode(m) {

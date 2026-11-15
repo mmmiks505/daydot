@@ -38,7 +38,10 @@ function readJSON(key, fallback) {
 function writeJSON(key, value) {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* storage unavailable */ }
 }
-let todos = readJSON(STORE_KEY, []);
+// Finished todos clear away by themselves 30 days after you tick them off.
+const KEEP_DONE_DAYS = 30;
+const pruneOld = (list) => list.filter((t) => !(t.done && t.doneAt && t.doneAt < Date.now() - KEEP_DONE_DAYS * 864e5));
+let todos = pruneOld(readJSON(STORE_KEY, []));
 const settings = Object.assign({ name: "", theme: "auto", weekStart: 0, mode: "month", color: "white" }, readJSON(SETTINGS_KEY, {}));
 // Named lists, like Homework or Shopping. Every todo belongs to one; older todos go in Personal.
 let lists = readJSON(LISTS_KEY, null) || [{ id: "personal", name: "Personal" }];
@@ -777,7 +780,7 @@ function renderDay() {
     (list.length ? `${left} of ${list.length} left to do` : "Nothing planned");
   const ul = $("day-todos");
   ul.innerHTML = "";
-  if (!list.length) ul.append(el("li", "empty", "No todos for this day yet."));
+
   list.forEach((t) => ul.append(todoItem(t)));
 }
 
@@ -960,6 +963,7 @@ function renderDoneSection(done, q, showList) {
   btn.addEventListener("click", () => { showDone = !showDone; renderTodoList(); });
   sec.append(btn);
   if (expanded) {
+    sec.append(el("p", "done-note", `Finished todos clear away after ${KEEP_DONE_DAYS} days.`));
     const ul = el("ul", "todos");
     done.slice(0, 100).forEach((x) => ul.append(todoItem(x, { showList, simple: settings.todoView === "simple" })));
     sec.append(ul);
@@ -989,16 +993,6 @@ function renderProfile() {
   $("photo-remove").hidden = !settings.photo;
   if (document.activeElement !== $("name-input")) $("name-input").value = settings.name;
 
-  const stats = [
-    ["To do", todos.filter((x) => !x.done).length],
-    ["Done", todos.filter((x) => x.done).length],
-  ];
-  $("stats").innerHTML = "";
-  stats.forEach(([label, value]) => {
-    const tile = el("div", "card stat");
-    tile.append(el("span", "stat-value", value), el("span", "stat-label", label));
-    $("stats").append(tile);
-  });
 
   document.querySelectorAll(".swatch").forEach((b) => b.setAttribute("aria-checked", b.dataset.color === settings.color));
   document.querySelectorAll("[data-theme-choice]").forEach((b) => b.setAttribute("aria-pressed", b.dataset.themeChoice === settings.theme));
@@ -1136,7 +1130,15 @@ $("mode-seg").addEventListener("click", (e) => {
   selectDay(selected);
 });
 
-$("day-add").addEventListener("click", () => openEditor(null, selected));
+$("day-quick").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const input = $("day-quick-input");
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = "";
+  addTodo(text, selected, "", currentList !== "all" ? currentList : lists[0].id);
+  input.focus();
+});
 $("todo-add").addEventListener("click", () => openEditor(null, ""));
 $("edit-cancel").addEventListener("click", closeOverlay);
 $("list-cancel").addEventListener("click", closeOverlay);
@@ -1226,6 +1228,15 @@ window.addEventListener("popstate", () => {
   if (!(history.state && history.state.overlay) && overlayOpen()) hideOverlays();
 });
 $("todo-search").addEventListener("input", renderTodoList);
+function setSearch(open) {
+  $("search-bar").hidden = !open;
+  $("search-toggle").setAttribute("aria-expanded", open);
+  if (open) setTimeout(() => $("todo-search").focus(), 30);
+  else if ($("todo-search").value) { $("todo-search").value = ""; renderTodoList(); }
+}
+$("search-toggle").addEventListener("click", () => setSearch($("search-bar").hidden));
+$("search-close").addEventListener("click", () => setSearch(false));
+$("todo-search").addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); setSearch(false); } });
 document.querySelectorAll("[data-todo-view]").forEach((b) => b.addEventListener("click", () => {
   settings.todoView = b.dataset.todoView;
   saveSettings();
@@ -1311,7 +1322,7 @@ window.daydot = {
       .slice(0, 200);
   },
   load(data) {
-    if (Array.isArray(data.todos)) todos = data.todos;
+    if (Array.isArray(data.todos)) todos = pruneOld(data.todos);
     if (Array.isArray(data.lists) && data.lists.length) lists = data.lists;
     if (data.settings && typeof data.settings === "object") {
       Object.keys(settings).forEach((k) => { if (!(k in data.settings)) delete settings[k]; });
