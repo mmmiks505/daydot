@@ -206,7 +206,7 @@
         </div>
         <label class="field">
           <span>Email</span>
-          <input id="acct-email-input" type="email" autocomplete="email" inputmode="email" required placeholder="you@example.com">
+          <input id="acct-email-input" type="email" autocomplete="username" inputmode="email" required placeholder="you@example.com">
         </label>
         <label class="field">
           <span>Password</span>
@@ -243,6 +243,14 @@
   <main class="view narrow" id="view-profile" data-view="profile" hidden>
     <header class="topbar"><a href="#calendar" class="corner-logo" aria-label="Daydot home"><svg viewBox="0 0 100 100" aria-hidden="true"><use href="#logo-d" class="logo-letter"/><circle cx="73" cy="74.5" r="6.5" class="logo-dot"/></svg></a><h1>Profile</h1></header>
     <section class="card account" id="account-card" hidden>
+      <div id="acct-back" hidden>
+        <h2>Welcome back 👋</h2>
+        <p class="muted">Log in as <strong id="acct-remembered"></strong> to see your todos.</p>
+        <div class="acct-actions">
+          <button type="button" class="primary" id="acct-quick">Log in</button>
+          <button type="button" class="link-btn" id="acct-forget">Not you?</button>
+        </div>
+      </div>
       <div id="acct-out">
         <h2>Save your todos</h2>
         <p class="muted">Make a free account with your email. Your todos are saved to it and show up on every device you log in on.</p>

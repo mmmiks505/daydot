@@ -3,7 +3,8 @@
 // If this file can't load (offline), Daydot still works and saves in the browser.
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
 import {
-  getAuth, connectAuthEmulator, onAuthStateChanged, createUserWithEmailAndPassword,
+  initializeAuth, indexedDBLocalPersistence, browserLocalPersistence, connectAuthEmulator,
+  onAuthStateChanged, createUserWithEmailAndPassword,
   signInWithEmailAndPassword, signOut, sendPasswordResetEmail,
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import {
@@ -20,7 +21,15 @@ const app = initializeApp({
   messagingSenderId: "384922267230",
   appId: "1:384922267230:web:70548c54d9702bc55a0ecf",
 });
-const auth = getAuth(app);
+// Stay logged in on this device until you tap Log out (saved in the browser's storage,
+// with a fallback if one kind of storage isn't available).
+const auth = initializeAuth(app, { persistence: [indexedDBLocalPersistence, browserLocalPersistence] });
+
+// The last email used on this device, so logging in again is quick. It's kept after
+// logging out (only the email, never the password) until you tap "Not you?".
+const EMAIL_KEY = "daydot:email";
+const rememberedEmail = () => { try { return localStorage.getItem(EMAIL_KEY) || ""; } catch { return ""; } };
+const rememberEmail = (e) => { try { if (e) localStorage.setItem(EMAIL_KEY, e); else localStorage.removeItem(EMAIL_KEY); } catch { /* ignore */ } };
 const db = getFirestore(app);
 
 // For testing on this computer only: http://localhost:…/?emulator uses local test servers.
@@ -116,9 +125,11 @@ onAuthStateChanged(auth, async (u) => {
   ready = false;
   if (unsubscribe) { unsubscribe(); unsubscribe = null; }
   $("account-card").hidden = false;
-  $("acct-out").hidden = !!u;
   $("acct-in").hidden = !u;
-  if (!u) return;
+  if (!u) { showLoggedOut(); return; }
+  $("acct-out").hidden = true;
+  $("acct-back").hidden = true;
+  rememberEmail(u.email);
 
   $("acct-email").textContent = u.email;
   setStatus("Loading your todos…");
@@ -153,11 +164,21 @@ function setMode(m) {
 function showError(text) { $("acct-error").textContent = text; $("acct-error").hidden = !text; }
 function showNote(text) { $("acct-note").textContent = text; $("acct-note").hidden = !text; }
 
+function showLoggedOut() {
+  const email = rememberedEmail();
+  $("acct-back").hidden = !email;
+  $("acct-out").hidden = !!email;
+  $("acct-remembered").textContent = email;
+}
+
 function openAccount(m) {
   setMode(m);
+  const email = m === "login" ? rememberedEmail() : "";
+  $("acct-email-input").value = email;
   $("acct-password").value = "";
   openOverlay("account-screen");
-  setTimeout(() => $("acct-email-input").focus(), 50);
+  // With the email filled in, go straight to the password (your phone may offer to fill it).
+  setTimeout(() => $(email ? "acct-password" : "acct-email-input").focus(), 50);
 }
 
 const MESSAGES = {
@@ -176,6 +197,8 @@ const messageFor = (e) => MESSAGES[e && e.code] || "Something went wrong. Try ag
 
 $("acct-signup").addEventListener("click", () => openAccount("signup"));
 $("acct-login").addEventListener("click", () => openAccount("login"));
+$("acct-quick").addEventListener("click", () => openAccount("login"));
+$("acct-forget").addEventListener("click", () => { rememberEmail(""); showLoggedOut(); });
 $("acct-cancel").addEventListener("click", closeOverlay);
 document.querySelectorAll("[data-acct-mode]").forEach((b) => b.addEventListener("click", () => setMode(b.dataset.acctMode)));
 
@@ -190,6 +213,7 @@ $("acct-form").addEventListener("submit", async (e) => {
   try {
     if (mode === "signup") await createUserWithEmailAndPassword(auth, email, password);
     else await signInWithEmailAndPassword(auth, email, password);
+    rememberEmail(email);
     closeOverlay();
   } catch (err) {
     showError(messageFor(err));
