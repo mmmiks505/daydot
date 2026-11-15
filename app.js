@@ -66,7 +66,6 @@ const saveSettings = () => { writeJSON(SETTINGS_KEY, settings); queueSync(); };
 /* ---------- state ---------- */
 let selected = todayKey();
 let viewMonth = new Date(); viewMonth.setDate(1);
-let filter = "open";
 let currentList = lists.some((l) => l.id === settings.list) ? settings.list : "all";
 
 const byTime = (a, b) => (a.time || "99:99").localeCompare(b.time || "99:99") || a.created - b.created;
@@ -100,6 +99,7 @@ function addTodo(text, date, time, listId) {
   renderAll();
 }
 function setDone(t, done) {
+  const wasDue = !t.done && t.date && t.date <= todayKey();
   t.done = done;
   t.doneAt = done ? Date.now() : undefined;
   if (done && t.repeat && !todos.some((x) => x.id === t.nextId)) {
@@ -120,6 +120,17 @@ function setDone(t, done) {
   }
   saveTodos();
   renderAll();
+  if (done && wasDue && !todos.some((x) => !x.done && x.date && x.date <= todayKey())) allDone();
+}
+function allDone() {
+  const y = $("yay");
+  y.hidden = false;
+  y.classList.remove("show");
+  void y.offsetWidth;
+  y.classList.add("show");
+  clearTimeout(allDone.timer);
+  allDone.timer = setTimeout(() => { y.hidden = true; }, 2600);
+  y.onclick = () => { y.hidden = true; };
 }
 function removeTodo(t) {
   todos = todos.filter((x) => x.id !== t.id);
@@ -150,12 +161,17 @@ function todoItem(t, { showList = false, reorder = null } = {}) {
   cb.checked = t.done;
   cb.setAttribute("aria-label", `Mark "${t.text}" done`);
   cb.addEventListener("change", () => {
-    // Repeating todos get a little celebration and slide away; the next one is already waiting.
-    if (cb.checked && t.repeat) swipeAway(li, () => setDone(t, true));
-    else setDone(t, cb.checked);
+    if (!cb.checked) { setDone(t, false); return; }
+    buzz(15);
+    // In To do (and for repeats) it slides away; elsewhere it pops and stays, crossed out.
+    if (t.repeat || li.closest("#todo-groups")) swipeAway(li, () => setDone(t, true));
+    else popDone(li, () => setDone(t, true));
   });
 
   const text = el("span", "text");
+  text.setAttribute("role", "button");
+  text.tabIndex = 0;
+  text.setAttribute("aria-label", `Edit "${t.text}"`);
   text.append(el("span", "title", t.text));
   const bits = [];
   if (t.repeat) bits.push("🔁 " + REPEAT_LABELS[t.repeat]);
@@ -163,6 +179,8 @@ function todoItem(t, { showList = false, reorder = null } = {}) {
   if (t.subtasks && t.subtasks.length) bits.push(`☑ ${t.subtasks.filter((x) => x.done).length}/${t.subtasks.length}`);
   if (t.notes) bits.push(t.notes.split("\n")[0]);
   if (bits.length) text.append(el("span", "meta", bits.join(" · ")));
+  text.addEventListener("click", () => { if (!li.dataset.held) openEditor(t); });
+  text.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openEditor(t); } });
   row.append(cb, text);
 
   if (showList) {
@@ -171,18 +189,11 @@ function todoItem(t, { showList = false, reorder = null } = {}) {
     row.append(tag);
   }
   row.append(el("span", "time", formatTime(t.time)));
-
-  const star = el("button", "star-btn" + (t.star ? " on" : ""), t.star ? "★" : "☆");
-  star.type = "button";
-  star.setAttribute("aria-label", t.star ? `Unstar "${t.text}"` : `Star "${t.text}"`);
-  star.setAttribute("aria-pressed", !!t.star);
-  star.addEventListener("click", () => { t.star = !t.star; saveTodos(); renderAll(); });
-
-  const edit = el("button", "edit-btn", "Edit");
-  edit.type = "button";
-  edit.setAttribute("aria-label", `Edit "${t.text}"`);
-  edit.addEventListener("click", () => openEditor(t));
-  row.append(star, edit);
+  if (t.star) {
+    const star = el("span", "star-mark", "★");
+    star.title = "Starred (press and hold the todo to unstar)";
+    row.append(star);
+  }
   li.append(row);
   addSwipe(li, row, t);
   return li;
@@ -202,18 +213,38 @@ function swipeAway(li, then, alreadySwiped = false) {
   setTimeout(then, pop + 560);
 }
 
+function popDone(li, then) {
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) { then(); return; }
+  li.classList.add("celebrate");
+  setTimeout(then, 420);
+}
+const buzz = (ms) => { try { if (navigator.vibrate) navigator.vibrate(ms); } catch { /* not supported */ } };
+
 /* Swipe a row sideways: right ticks it off (or back), left deletes it with Undo. */
 function addSwipe(li, row, t) {
-  let x0 = 0, y0 = 0, dx = 0, id = null, tracking = false, sideways = false;
+  let x0 = 0, y0 = 0, dx = 0, id = null, tracking = false, sideways = false, hold = null;
   row.addEventListener("pointerdown", (e) => {
     if (e.target.closest("button, input, .handle") || (e.pointerType === "mouse" && e.button !== 0)) return;
     x0 = e.clientX; y0 = e.clientY; dx = 0; id = e.pointerId; tracking = true; sideways = false;
+    delete li.dataset.held;
+    // Press and hold to star or unstar.
+    clearTimeout(hold);
+    hold = setTimeout(() => {
+      if (!tracking || sideways) return;
+      tracking = false;
+      li.dataset.held = "1";
+      buzz(20);
+      li.classList.add("starring");
+      setTimeout(() => { t.star = !t.star; saveTodos(); renderAll(); }, 220);
+    }, 520);
   });
+  row.addEventListener("contextmenu", (e) => { if (li.dataset.held || tracking) e.preventDefault(); });
   row.addEventListener("pointermove", (e) => {
     if (!tracking || e.pointerId !== id) return;
     const mx = e.clientX - x0, my = e.clientY - y0;
     if (!sideways) {
       if (Math.abs(mx) < 10 && Math.abs(my) < 10) return;
+      clearTimeout(hold);
       if (Math.abs(my) > Math.abs(mx)) { tracking = false; return; } // scrolling
       sideways = true;
       try { row.setPointerCapture(id); } catch { /* pointer already gone */ }
@@ -225,6 +256,7 @@ function addSwipe(li, row, t) {
     li.classList.toggle("armed", Math.abs(dx) > 80);
   });
   const end = (cancel) => {
+    clearTimeout(hold);
     if (!tracking) return;
     tracking = false;
     li.classList.remove("swiping", "armed");
@@ -286,8 +318,12 @@ function openEditor(todo, date) {
   $("edit-steps").innerHTML = "";
   (todo && todo.subtasks || []).forEach((st) => addStepRow(st));
   updateRepeatHint();
+  $("edit-star").checked = !!(todo && todo.star);
   $("edit-delete").hidden = !todo;
   updateRemindHint();
+  // Only the name shows at first; open "More" if this todo already uses any extras.
+  const extras = todo && (todo.notes || (todo.subtasks || []).length || todo.time || todo.repeat || todo.remind != null || todo.star);
+  setMore(!!extras);
   openOverlay("edit-screen");
   if (!todo) setTimeout(() => $("edit-text").focus(), 50);
 }
@@ -300,6 +336,7 @@ function setEditDate(k, notify = true) {
   $("date-btn").classList.toggle("empty", !k);
   if (k) { const d = fromKey(k); miniMonth = new Date(d.getFullYear(), d.getMonth(), 1); }
   if (notify) $("edit-date").dispatchEvent(new Event("input"));
+  updateMoreLabel();
   if (!$("mini-cal").hidden) renderMiniCal();
 }
 function showMiniCal(open) {
@@ -338,6 +375,19 @@ function renderMiniCal() {
     b.addEventListener("click", () => { setEditDate(k); setTimeout(() => showMiniCal(false), 220); });
     grid.append(b);
   }
+}
+
+function setMore(open) {
+  $("edit-more").hidden = !open;
+  $("more-btn").setAttribute("aria-expanded", open);
+  updateMoreLabel();
+}
+function updateMoreLabel() {
+  const d = $("edit-date").value;
+  const bits = [];
+  if (d) bits.push("📅 " + friendlyDay(d));
+  if (lists.length > 1) bits.push(listName($("edit-list").value));
+  $("more-label").textContent = $("edit-more").hidden ? ["More options", ...bits].join(" · ") : "Fewer options";
 }
 
 function addStepRow(st = { id: newId(), text: "", done: false }) {
@@ -526,9 +576,10 @@ const notify = (text) => showToast(text, "ℹ️");
 /* Full-screen forms get their own history entry, so Cancel, the back gesture or Esc closes them. */
 const OVERLAYS = ["edit-screen", "list-screen", "account-screen"];
 function openOverlay(id) {
-  $(id).hidden = false;
+  const already = overlayOpen();
+  OVERLAYS.forEach((o) => { $(o).hidden = o !== id; });
   document.body.classList.add("day-open");
-  history.pushState({ ...(history.state || {}), overlay: true }, "", location.href);
+  if (!already) history.pushState({ ...(history.state || {}), overlay: true }, "", location.href);
 }
 function hideOverlays() {
   OVERLAYS.forEach((id) => { $(id).hidden = true; });
@@ -701,7 +752,7 @@ function renderCalendar() {
   weekdays.innerHTML = names.map((d) => `<div>${d}</div>`).join("");
 
   if (mode === "month") {
-    $("month-label").textContent = viewMonth.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+    $("month-label").textContent = viewMonth.toLocaleDateString(undefined, { month: innerWidth < 480 ? "short" : "long", year: "numeric" });
     const start = weekStartOf(keyOf(viewMonth));
     for (let i = 0; i < 42; i++) {
       const k = addDays(start, i);
@@ -711,10 +762,10 @@ function renderCalendar() {
     const start = weekStartOf(selected);
     const end = addDays(start, 6);
     const sameMonth = fromKey(start).getMonth() === fromKey(end).getMonth();
-    $("month-label").textContent = `${fmt(start, { month: "short", day: "numeric" })} – ${fmt(end, sameMonth ? { day: "numeric" } : { month: "short", day: "numeric" })}, ${fromKey(end).getFullYear()}`;
+    $("month-label").textContent = `${fmt(start, { month: "short", day: "numeric" })} – ${fmt(end, sameMonth ? { day: "numeric" } : { month: "short", day: "numeric" })}`;
     for (let i = 0; i < 7; i++) grid.append(dayCell(addDays(start, i), { week: true }));
   } else {
-    $("month-label").textContent = fmt(selected, { weekday: "long", month: "long", day: "numeric" });
+    $("month-label").textContent = fmt(selected, innerWidth < 480 ? { weekday: "short", month: "short", day: "numeric" } : { weekday: "long", month: "long", day: "numeric" });
   }
 }
 
@@ -793,39 +844,31 @@ function renderListChips() {
   wrap.append(add);
 }
 
+let showDone = false;
+const matches = (x, q) => [x.text, x.notes || "", ...(x.subtasks || []).map((st) => st.text)].join(" ").toLowerCase().includes(q);
+
 function renderTodoList() {
   renderListChips();
   const t = todayKey();
   const all = currentList === "all";
   const scope = (all ? todos : todos.filter((x) => x.listId === currentList)).filter((x) => !waitingRepeat(x));
-  const open = scope.filter((x) => !x.done);
+  const q = $("todo-search").value.trim().toLowerCase();
+  let open = scope.filter((x) => !x.done);
+  let done = scope.filter((x) => x.done);
   const overdue = open.filter((x) => x.date && x.date < t).length;
   $("list-title").textContent = all ? "All lists" : listName(currentList);
   $("list-edit").hidden = all;
   $("todo-summary").textContent = open.length
     ? `${open.length} to do${overdue ? ` · ${overdue} overdue` : ""}`
     : "All caught up!";
+  if (q) { open = open.filter((x) => matches(x, q)); done = done.filter((x) => matches(x, q)); }
 
-  $("todo-search").addEventListener("input", renderTodoList);
-document.querySelectorAll(".filter").forEach((b) => {
-    const on = b.dataset.filter === filter;
-    b.classList.toggle("active", on);
-    b.setAttribute("aria-selected", on);
-  });
-
-  let list = filter === "open" ? open : filter === "done" ? scope.filter((x) => x.done) : [...scope];
-  const q = $("todo-search").value.trim().toLowerCase();
-  if (q) {
-    list = list.filter((x) => [x.text, x.notes || "", ...(x.subtasks || []).map((st) => st.text)].join(" ").toLowerCase().includes(q));
-  }
   // Dated todos first (soonest first), then ones with no date.
-  list.sort((a, b) => (!a.date - !b.date) || a.date.localeCompare(b.date) || rank(a, b));
-  if (filter === "done") list.reverse();
-
+  open.sort((a, b) => (!a.date - !b.date) || a.date.localeCompare(b.date) || rank(a, b));
   // Group: all overdue together, then one group per date, then "No date".
   const groups = new Map();
-  list.forEach((x) => {
-    const g = !x.date ? "none" : filter === "open" && x.date < t ? "overdue" : x.date;
+  open.forEach((x) => {
+    const g = !x.date ? "none" : x.date < t ? "overdue" : x.date;
     if (!groups.has(g)) groups.set(g, []);
     groups.get(g).push(x);
   });
@@ -833,10 +876,9 @@ document.querySelectorAll(".filter").forEach((b) => {
 
   const wrap = $("todo-groups");
   wrap.innerHTML = "";
-  if (!list.length) {
-    const msg = q ? `Nothing matches "${$("todo-search").value.trim()}".` : filter === "done" ? "Nothing finished yet." : "Nothing here yet. Tap + Add todo to add one.";
+  if (!open.length) {
+    const msg = q ? `Nothing to do matches "${$("todo-search").value.trim()}".` : scope.length ? "Nothing left to do 🎉" : "Nothing here yet. Tap + Add todo to add one.";
     wrap.append(el("p", "empty card", msg));
-    return;
   }
   const showList = all && lists.length > 1;
   groups.forEach((items, g) => {
@@ -858,13 +900,33 @@ document.querySelectorAll(".filter").forEach((b) => {
     }
     const ul = el("ul", "todos");
     items.forEach((x) => {
-      const li = todoItem(x, { showList, reorder: filter !== "done" && !q && items.length > 1 ? g : null });
+      const li = todoItem(x, { showList, reorder: !q && items.length > 1 ? g : null });
       if (g === "overdue") li.querySelector(".time").textContent = friendlyDay(x.date) + (x.time ? " " + shortTime(x.time) : "");
       ul.append(li);
     });
     sec.append(h, ul);
     wrap.append(sec);
   });
+
+  // Finished todos, folded away until you want them.
+  const dw = $("done-wrap");
+  dw.innerHTML = "";
+  if (!done.length) return;
+  done.sort((a, b) => (b.doneAt || 0) - (a.doneAt || 0));
+  const expanded = showDone || !!q;
+  const sec = el("section", "card group done-group");
+  const btn = el("button", "done-toggle");
+  btn.type = "button";
+  btn.setAttribute("aria-expanded", expanded);
+  btn.append(el("span", null, `Done (${done.length})`), el("span", "chev", "▾"));
+  btn.addEventListener("click", () => { showDone = !showDone; renderTodoList(); });
+  sec.append(btn);
+  if (expanded) {
+    const ul = el("ul", "todos");
+    done.slice(0, 100).forEach((x) => ul.append(todoItem(x, { showList })));
+    sec.append(ul);
+  }
+  dw.append(sec);
 }
 
 /* ---------- profile ---------- */
@@ -992,17 +1054,43 @@ function renderBadge() {
 }
 
 function renderAll() {
+  const before = rowPositions();
   renderCalendar();
   renderDay();
   renderTodoList();
   renderProfile();
   renderBadge();
+  glide(before);
+}
+
+/* Todos glide to their new place instead of jumping (and new ones fade in). */
+const rowKey = (li) => (li.closest("ul").id === "day-todos" ? "d" : "") + li.dataset.id;
+const ROWS = "#todo-groups li[data-id], #done-wrap li[data-id], #day-todos li[data-id]";
+function rowPositions() {
+  const map = new Map();
+  document.querySelectorAll(ROWS).forEach((li) => {
+    const r = li.getBoundingClientRect();
+    if (r.height) map.set(rowKey(li), r.top);
+  });
+  return map;
+}
+function glide(before) {
+  if (!before.size || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  document.querySelectorAll(ROWS).forEach((li) => {
+    const r = li.getBoundingClientRect();
+    if (!r.height) return;
+    const old = before.get(rowKey(li));
+    const anim = old == null
+      ? [{ opacity: 0, transform: "translateY(6px)" }, { opacity: 1, transform: "none" }]
+      : Math.abs(old - r.top) > 1 ? [{ transform: `translateY(${old - r.top}px)` }, { transform: "none" }] : null;
+    if (anim) li.animate(anim, { duration: 260, easing: "cubic-bezier(.2, .8, .2, 1)" });
+  });
 }
 
 /* ---------- events ---------- */
 $("prev").addEventListener("click", () => step(-1));
 $("next").addEventListener("click", () => step(1));
-$("today").addEventListener("click", () => selectDay(todayKey()));
+$("month-label").addEventListener("click", () => selectDay(todayKey()));
 $("mode-seg").addEventListener("click", (e) => {
   const b = e.target.closest("[data-mode]");
   if (!b) return;
@@ -1016,6 +1104,8 @@ $("edit-cancel").addEventListener("click", closeOverlay);
 $("list-cancel").addEventListener("click", closeOverlay);
 ["edit-date", "edit-time", "edit-remind"].forEach((id) => $(id).addEventListener("input", updateRemindHint));
 ["edit-date", "edit-repeat"].forEach((id) => $(id).addEventListener("input", updateRepeatHint));
+$("more-btn").addEventListener("click", () => setMore($("edit-more").hidden));
+$("edit-list").addEventListener("change", updateMoreLabel);
 $("date-btn").addEventListener("click", () => showMiniCal($("mini-cal").hidden));
 $("mini-prev").addEventListener("click", () => { miniMonth = new Date(miniMonth.getFullYear(), miniMonth.getMonth() - 1, 1); renderMiniCal(); });
 $("mini-next").addEventListener("click", () => { miniMonth = new Date(miniMonth.getFullYear(), miniMonth.getMonth() + 1, 1); renderMiniCal(); });
@@ -1073,17 +1163,16 @@ $("edit-form").addEventListener("submit", (e) => {
   let finalDate = date;
   if (repeat && !finalDate) finalDate = todayKey();
   if (!text) return;
-  if (remind != null && !date) { updateRemindHint(); showMiniCal(true); return; }
+  if (remind != null && !date) { setMore(true); updateRemindHint(); showMiniCal(true); return; }
   if (remind != null) askNotifyPermission();
   if (editing) {
     if (editing.repeat !== repeat || editing.date !== finalDate) delete editing.repeatDay;
-    Object.assign(editing, { text, date: finalDate, time: $("edit-time").value, listId, remind, notes, repeat, subtasks });
+    Object.assign(editing, { text, date: finalDate, time: $("edit-time").value, listId, remind, notes, repeat, subtasks, star: $("edit-star").checked });
     saveTodos();
     renderAll();
   } else {
-    if (filter === "done") filter = "open";
     addTodo(text, finalDate, $("edit-time").value, listId);
-    Object.assign(todos[todos.length - 1], { remind, notes, repeat, subtasks });
+    Object.assign(todos[todos.length - 1], { remind, notes, repeat, subtasks, star: $("edit-star").checked });
     saveTodos();
     renderAll();
   }
@@ -1098,8 +1187,7 @@ $("edit-delete").addEventListener("click", async () => {
 window.addEventListener("popstate", () => {
   if (!(history.state && history.state.overlay) && overlayOpen()) hideOverlays();
 });
-document.querySelectorAll(".filter").forEach((b) =>
-  b.addEventListener("click", () => { filter = b.dataset.filter; renderTodoList(); }));
+$("todo-search").addEventListener("input", renderTodoList);
 
 $("name-input").addEventListener("input", (e) => { settings.name = e.target.value; saveSettings(); renderProfile(); });
 $("theme-seg").addEventListener("click", (e) => {

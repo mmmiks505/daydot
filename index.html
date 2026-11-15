@@ -34,18 +34,17 @@
     <div class="cal-layout">
       <section class="card calendar">
         <header class="cal-head">
-          <h2 class="month-label" id="month-label"></h2>
-          <div class="nav">
-            <button type="button" id="prev" aria-label="Previous">‹</button>
-            <button type="button" id="today">Today</button>
-            <button type="button" id="next" aria-label="Next">›</button>
+          <div class="month-nav">
+            <button type="button" class="icon-btn" id="prev" aria-label="Previous">‹</button>
+            <button type="button" class="month-label" id="month-label" title="Back to today"></button>
+            <button type="button" class="icon-btn" id="next" aria-label="Next">›</button>
+          </div>
+          <div class="seg mode-seg" id="mode-seg" role="radiogroup" aria-label="Calendar view">
+            <button type="button" data-mode="month">Month</button>
+            <button type="button" data-mode="week">Week</button>
+            <button type="button" data-mode="day">Day</button>
           </div>
         </header>
-        <div class="seg mode-seg" id="mode-seg" role="radiogroup" aria-label="Calendar view">
-          <button type="button" data-mode="month">Month</button>
-          <button type="button" data-mode="week">Week</button>
-          <button type="button" data-mode="day">Day</button>
-        </div>
         <div class="weekdays" id="weekdays"></div>
         <div class="grid" id="grid"></div>
         <div class="day-panel" id="day-panel">
@@ -86,6 +85,10 @@
           <span>What do you need to do?</span>
           <input id="edit-text" maxlength="120" required placeholder="e.g. Buy groceries">
         </label>
+        <button type="button" class="more-btn" id="more-btn" aria-expanded="false" aria-controls="edit-more">
+          <span id="more-label">More options</span><span class="chev" aria-hidden="true">▾</span>
+        </button>
+        <div class="edit-more" id="edit-more" hidden>
         <label class="field">
           <span>Notes <em>(optional)</em></span>
           <textarea id="edit-notes" rows="4" maxlength="2000" placeholder="Details, links, anything to remember"></textarea>
@@ -149,6 +152,11 @@
           </select>
           <small class="hint" id="remind-hint"></small>
         </label>
+        <label class="check-field">
+          <input type="checkbox" id="edit-star">
+          <span>★ Star it <em>(keeps it at the top)</em></span>
+        </label>
+        </div>
         <button type="submit" class="primary big">Save</button>
         <button type="button" class="big" id="edit-ics" hidden>📅 Add to my phone's calendar</button>
         <button type="button" class="danger big" id="edit-delete">Delete todo</button>
@@ -227,12 +235,8 @@
       </div>
       <button type="button" class="add-btn" id="todo-add">+ Add todo</button>
     </div>
-    <div class="filters" role="tablist" aria-label="Show">
-      <button type="button" class="filter active" data-filter="open" role="tab" aria-selected="true">To do</button>
-      <button type="button" class="filter" data-filter="done" role="tab" aria-selected="false">Done</button>
-      <button type="button" class="filter" data-filter="all" role="tab" aria-selected="false">All</button>
-    </div>
     <div id="todo-groups"></div>
+    <div id="done-wrap"></div>
   </main>
 
   <!-- Profile -->
@@ -314,6 +318,13 @@
       <p class="muted small">Your todos are saved in this browser only.</p>
     </section>
   </main>
+
+  <div class="yay" id="yay" hidden role="status" aria-live="polite">
+    <div class="yay-card">
+      <svg viewBox="0 0 100 100" class="yay-logo" aria-hidden="true"><use href="#logo-d" class="logo-letter"/><circle class="yay-dot" cx="73" cy="74.5" r="6.5"/></svg>
+      <p>All done for today ✨</p>
+    </div>
+  </div>
 
   <div class="modal" id="confirm" hidden>
     <div class="modal-card" role="alertdialog" aria-modal="true" aria-labelledby="confirm-text">
